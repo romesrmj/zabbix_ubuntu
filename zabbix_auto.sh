@@ -20,10 +20,15 @@ FIREWALL_PORTS=("80" "443" "3000" "10050" "10051")
 # Atualiza o sistema
 sudo apt-get update -y && sudo apt-get upgrade -y
 
+# Instalando DBConfi
+sudo apt-get install debconf
+sudo apt-get update
+
 # Instala o MySQL e define a senha do root
+sudo apt-get install -y mysql-server
 sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $MYSQL_ROOT_PASSWORD"
 sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $MYSQL_ROOT_PASSWORD"
-sudo apt-get install -y mysql-server
+
 
 # Instala as dependências do Zabbix
 sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools
