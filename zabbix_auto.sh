@@ -56,8 +56,10 @@ sudo apt-get update -y
 sudo apt-get install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent
 
 # Cria o banco de dados para o Zabbix e o usuário com as permissões necessárias
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "create database zabbix character set utf8 collate utf8_bin;"
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "grant all privileges on zabbix.* to zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "create user zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "grant all privileges on zabbix.* to zabbix@localhost;"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e set global log_bin_trust_function_creators = 1;
 mysql -u root -p$MYSQL_ROOT_PASSWORD -e "flush privileges;"
 
 # Importa o schema e os dados iniciais para o banco de dados do Zabbix
