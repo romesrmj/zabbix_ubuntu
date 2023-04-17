@@ -31,7 +31,7 @@ sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again p
 
 
 # Instala as dependências do Zabbix
-sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools
+sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales
 
 # Define o timezone para America/Sao_Paulo
 sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
