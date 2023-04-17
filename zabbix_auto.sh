@@ -1,66 +1,96 @@
 #!/bin/bash
 
-PASSWORD="zbx#2k23$aut0"
+#SENHA:zbx#2k23aut0
 
-# Definir a senha do root do MySQL
-debconf-set-selections <<< "mysql-server mysql-server/root_password password $PASSWORD"
-debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $PASSWORD"
+# Define a senha do root do MySQL
+MYSQL_ROOT_PASSWORD="zbx#2k23aut0"
 
-# Instalar os pacotes necessários
-apt-get update
-apt-get install -y apache2 mysql-server mysql-client snmp snmpd libmysqlclient-dev libsnmp-dev libopenipmi-dev libcurl4-gnutls-dev fping libxml2-dev libevent-dev make automake libtool libpcre3-dev libssl-dev libsnmp-dev libcurl4-openssl-dev pkg-config php php-cgi libapache2-mod-php php-common php-pear php-mbstring php-gd php-intl php-mysql php-bcmath php-zip php-xml php-ldap composer
+# Define a senha do usuário admin do Zabbix
+ZABBIX_ADMIN_PASSWORD="zbx#2k23aut0"
 
-# Definir timezone para São Paulo
-ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
-dpkg-reconfigure -f noninteractive tzdata
+# Define a senha do usuário do Grafana
+GRAFANA_USER_PASSWORD="zbx#2k23aut0"
 
-# Adicionar o repositório do Zabbix
+# Define a timezone padrão para America/Sao_Paulo
+TIMEZONE="America/Sao_Paulo"
+
+# Define as portas a serem liberadas no firewall
+FIREWALL_PORTS=("80" "443" "3000" "10050" "10051")
+
+# Atualiza o sistema
+sudo apt-get update -y && sudo apt-get upgrade -y
+
+# Instala o MySQL e define a senha do root
+sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $MYSQL_ROOT_PASSWORD"
+sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $MYSQL_ROOT_PASSWORD"
+sudo apt-get install -y mysql-server
+
+# Instala as dependências do Zabbix
+sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools
+
+# Define o timezone para America/Sao_Paulo
+sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
+sudo dpkg-reconfigure --frontend noninteractive tzdata
+
+# Define o locale-gen para pt_BR.UTF-8
+sudo sed -i 's/# pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/g' /etc/locale.gen
+sudo locale-gen
+
+# Adiciona o repositório do Zabbix
 wget https://repo.zabbix.com/zabbix/6.2/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.2-1+ubuntu22.04_all.deb
-dpkg -i zabbix-release_6.2-1+ubuntu22.04_all.deb
-apt-get update
+sudo dpkg -i zabbix-release_6.2-1+ubuntu22.04_all.deb
 
-# Instalar o Zabbix server e frontend
-apt-get install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf
+# Adiciona o repositório do Grafana
+wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
+echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
 
-# Define o idioma padrão do Zabbix para pt-BR
-sudo sed -i "s/'language' => 'en_GB'/'language' => 'pt_BR'/g" /usr/share/zabbix/include/classes/core/CWebUser.php
+# Atualiza a lista de pacotes
+sudo apt-get update -y
 
-# Criar banco de dados para o Zabbix
-mysql -uroot -p$PASSWORD -e "CREATE DATABASE zabbix CHARACTER SET utf8 COLLATE utf8_bin;"
-mysql -uroot -p$PASSWORD -e "CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '$PASSWORD';"
-mysql -uroot -p$PASSWORD -e "GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';"
+# Instala o Zabbix server, frontend e agent
+sudo apt-get install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent
 
-# Importar o schema do banco de dados do Zabbix
-cd /usr/share/doc/zabbix-server-mysql
-gunzip -c create.sql.gz | mysql -uzabbix -p$PASSWORD zabbix
+# Cria o banco de dados para o Zabbix e o usuário com as permissões necessárias
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "create database zabbix character set utf8 collate utf8_bin;"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "grant all privileges on zabbix.* to zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
+mysql -u root -p$MYSQL_ROOT_PASSWORD -e "flush privileges;"
 
-# Habilitar e iniciar o serviço do Zabbix server
-systemctl enable zabbix-server
-systemctl start zabbix-server
+# Importa o schema e os dados iniciais para o banco de dados do Zabbix
+sudo zcat /usr/share/doc/zabbix-server-mysql*/create.sql.gz | mysql -u zabbix -p$ZABBIX_ADMIN_PASSWORD zabbix
 
-# Configurar o firewall
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 10050/tcp
-ufw allow 10051/tcp
-ufw enable
+#Configura o Zabbix server para usar o banco de dados
+sudo sed -i 's/# DBPassword=/DBPassword='"$ZABBIX_ADMIN_PASSWORD"'/g' /etc/zabbix/zabbix_server.conf
 
-# Instalar o Grafana
+#Reinicia o serviço do Zabbix server e do Apache
+sudo systemctl restart zabbix-server zabbix-agent apache2
+
+#Habilita os serviços do Zabbix server e do Apache para iniciar automaticamente no boot
+sudo systemctl enable zabbix-server zabbix-agent apache2
+
+#Instala o Grafana
 wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
 echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
 sudo apt-get update
 sudo apt-get install -y grafana
 
-# Habilitar e iniciar o serviço do Grafana
-sudo systemctl enable grafana-server
+#Inicia o serviço do Grafana
 sudo systemctl start grafana-server
 
-# Instalar o SNMP
-apt-get install -y snmp snmpd net-snmp snmp-mibs-downloader
+#Habilita o serviço do Grafana para iniciar automaticamente no boot
+sudo systemctl enable grafana-server
 
-# Reiniciar o Apache
-systemctl restart apache2
+#Instala o plugin do Zabbix no Grafana
+sudo grafana-cli plugins install alexanderzobnin-zabbix-app
 
-echo
+#Reinicia o serviço do Grafana
+sudo systemctl restart grafana-server
+
+#Imprime as informações de acesso
+echo "Zabbix URL: http://$(curl -s ifconfig.co):8080/zabbix"
+echo "Grafana URL: http://$(curl -s ifconfig.co):3000"
+echo "Zabbix Admin Username: Admin"
+echo "Zabbix Admin Password: $ZABBIX_ADMIN_PASSWORD"
+echo "Grafana Admin Username: admin"
+echo "Grafana Admin Password: admin"
 
 echo "Script finalizado!"
