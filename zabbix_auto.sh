@@ -28,7 +28,7 @@ sudo apt-get update
 sudo apt-get install -y mysql-server
 sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $MYSQL_ROOT_PASSWORD"
 sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $MYSQL_ROOT_PASSWORD"
-
+sudo service mysql start
 
 # Instala as dependências do Zabbix
 sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales
@@ -64,7 +64,7 @@ mysql -u root -p$MYSQL_ROOT_PASSWORD -e "flush privileges;"
 sudo zcat /usr/share/doc/zabbix-server-mysql*/create.sql.gz | mysql -u zabbix -p$ZABBIX_ADMIN_PASSWORD zabbix
 
 #Configura o Zabbix server para usar o banco de dados
-sudo sed -i 's/# DBPassword=/DBPassword='"$ZABBIX_ADMIN_PASSWORD"'/g' /etc/zabbix/zabbix_server.conf
+sudo sed -i "s/^.DBPassword=.$/DBPassword=$ZABBIX_ADMIN_PASSWORD/g" /etc/zabbix/zabbix_server.conf
 
 #Reinicia o serviço do Zabbix server e do Apache
 sudo systemctl restart zabbix-server zabbix-agent apache2
@@ -73,9 +73,6 @@ sudo systemctl restart zabbix-server zabbix-agent apache2
 sudo systemctl enable zabbix-server zabbix-agent apache2
 
 #Instala o Grafana
-wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
-echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
-sudo apt-get update
 sudo apt-get install -y grafana
 
 #Inicia o serviço do Grafana
