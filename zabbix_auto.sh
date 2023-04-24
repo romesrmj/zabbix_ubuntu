@@ -38,8 +38,9 @@ sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 sudo dpkg-reconfigure --frontend noninteractive tzdata
 
 # Define o locale-gen para pt_BR.UTF-8
-sudo sed -i 's/# pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/g en_US ISO-8859-1 en_US.UTF-8 UTF-8' /etc/locale.gen
-sudo locale-gen
+locale-gen pt_BR.UTF-8 
+m-a prepare 
+update-locale LANG=pt_BR.UTF-8 
 
 # REPOSITORIO
 wget https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-1+ubuntu22.04_all.deb
