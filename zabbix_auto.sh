@@ -31,7 +31,7 @@ sudo debconf-set-selections <<< "zabbix-server-mysql zabbix-server-mysql/root_pa
 sudo service mysql start
 
 # Instala as dependências do Zabbix
-sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales
+sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common
 
 # Define o timezone para America/Sao_Paulo
 sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
@@ -57,21 +57,22 @@ sudo apt-get update -y
 apt install zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent
 
 #CRIANDO BANCO DE DADOS
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "create user zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "grant all privileges on zabbix.* to zabbix@localhost;"
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "set global log_bin_trust_function_creators = 1;"
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "create user zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "grant all privileges on zabbix.* to zabbix@localhost;"
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_function_creators = 1;"
 quit;
 
 #SCHEMAS BANCO
-zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -u zabbix -p$ZABBIX_ADMIN_PASSWORD zabbix
+zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -u zabbix --password="$ZABBIX_ADMIN_PASSWORD" zabbix
 
 #DISABLE LOG_BIN_TRUST
-mysql -u root -p$MYSQL_ROOT_PASSWORD -e "set global log_bin_trust_function_creators = 0;"
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_function_creators = 0;"
 quit;
 
 # EDIT CAMINHO /etc/zabbix/zabbix_server.conf
 sudo sed -i "s/^.DBPassword=.$/DBPassword=$ZABBIX_ADMIN_PASSWORD/g" /etc/zabbix/zabbix_server.conf
+sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone America\/Sao_Paulo/g' /etc/apache2/conf-enabled/zabbix.conf
 
 #Reinicia o serviço do Zabbix server e do Apache
 sudo systemctl restart zabbix-server zabbix-agent apache2
@@ -90,6 +91,7 @@ sudo systemctl enable grafana-server
 
 #Instala o plugin do Zabbix no Grafana
 sudo grafana-cli plugins install alexanderzobnin-zabbix-app
+sudo grafana-cli plugins update alexanderzobnin-zabbix-app
 
 #Reinicia o serviço do Grafana
 sudo systemctl restart grafana-server
