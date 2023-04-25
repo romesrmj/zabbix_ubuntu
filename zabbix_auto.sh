@@ -11,10 +11,6 @@ ZABBIX_ADMIN_PASSWORD="zbx#2k23aut0"
 # Define a senha do usuário do Grafana
 GRAFANA_USER_PASSWORD="zbx#2k23aut0"
 
-pro config set apt_news=false
-export NEEDRESTART_MODE=a
-export DEBIAN_FRONTEND=noninteractive
-
 # Define a timezone padrão para America/Sao_Paulo
 TIMEZONE="America/Sao_Paulo"
 
@@ -35,7 +31,7 @@ sudo debconf-set-selections <<< "zabbix-server-mysql zabbix-server-mysql/root_pa
 sudo service mysql start
 
 # Instala as dependências do Zabbix
-sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common nano
+sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common nano needrestart 
 
 # Define o timezone para America/Sao_Paulo
 sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
