@@ -11,6 +11,10 @@ ZABBIX_ADMIN_PASSWORD="zbx#2k23aut0"
 # Define a senha do usuário do Grafana
 GRAFANA_USER_PASSWORD="zbx#2k23aut0"
 
+pro config set apt_news=false
+export NEEDRESTART_MODE=a
+export DEBIAN_FRONTEND=noninteractive
+
 # Define a timezone padrão para America/Sao_Paulo
 TIMEZONE="America/Sao_Paulo"
 
