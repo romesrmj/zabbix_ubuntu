@@ -59,9 +59,9 @@ apt install zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-age
 
 #CRIANDO BANCO DE DADOS
 mysql -uroot --password="" -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
-mysql -uroot --password="" -e "create user zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
-mysql -uroot --password="" -e "grant all privileges on zabbix.* to zabbix@localhost;"
-mysql -uroot --password="" -e "set global log_bin_trust_function_creators = 1;"
+mysql -uroot --password="" -e "create user 'zabbix'@'localhost' identified by '$ZABBIX_ADMIN_PASSWORD';"
+mysql -uroot --password="" -e "grant all privileges on zabbix.* to 'zabbix'@'localhost'";
+mysql -uroot --password="" -e "set global log_bin_trust_function_creators = 1";
 mysql -uroot --password="" -e "SELECT host, use FROM mysql.user";
 mysql -uroot --password="" -e "SHOW GRANS FOR 'zabbix'@'localhost'";
 quit;
