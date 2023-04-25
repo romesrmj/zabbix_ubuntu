@@ -72,7 +72,7 @@ mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_func
 quit;
 
 # EDIT CAMINHO /etc/zabbix/zabbix_server.conf
-sudo sed -i "s/^.DBPassword=.$/DBPassword=$ZABBIX_ADMIN_PASSWORD/g" /etc/zabbix/zabbix_server.conf
+sudo sed -i "s/^.DBPassword=.$/DBPassword="$ZABBIX_ADMIN_PASSWORD"/g" /etc/zabbix/zabbix_server.conf
 sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone America\/Sao_Paulo/g' /etc/apache2/conf-enabled/zabbix.conf
 
 #FIX CACHESIZE
