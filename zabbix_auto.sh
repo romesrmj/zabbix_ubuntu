@@ -62,18 +62,18 @@ sudo apt-get update -y
 apt install zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent
 
 #CRIANDO BANCO DE DADOS
-mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
-mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "create user zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD';"
-mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "grant all privileges on zabbix.* to zabbix@localhost;"
-mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_function_creators = 1;"
-quit;
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "create database zabbix character set utf8mb4 collate utf8mb4_bin";
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "create user zabbix@localhost identified by '$ZABBIX_ADMIN_PASSWORD'";
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "grant all privileges on zabbix.* to zabbix@localhost";
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_function_creators = 1";
+quit
 
 #SCHEMAS BANCO
 zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -u zabbix --password="$ZABBIX_ADMIN_PASSWORD" zabbix
 
 #DISABLE LOG_BIN_TRUST
-mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_function_creators = 0;"
-quit;
+mysql -uroot --password="$MYSQL_ROOT_PASSWORD" -e "set global log_bin_trust_function_creators = 0";
+quit
 
 # EDIT CAMINHO /etc/zabbix/zabbix_server.conf
 sudo sed -i 's/'#DBPassword=' /'DBPassword="$ZABBIX_ADMIN_PASSWORD"/g" /etc/zabbix/zabbix_server.conf
