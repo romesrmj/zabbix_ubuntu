@@ -22,7 +22,7 @@ sudo apt-get update -y && sudo apt-get upgrade -y
 
 # Instalando DBConfi
 sudo apt-get install debconf
-sudo apt-get update
+sudo apt-get update -y
 
 # Instala o MySQL e define a senha do root
 sudo apt-get install -y zabbix-server-mysql
@@ -31,7 +31,7 @@ sudo debconf-set-selections <<< "zabbix-server-mysql zabbix-server-mysql/root_pa
 sudo service mysql start
 
 # Instala as dependências do Zabbix
-sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common
+sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common nano
 
 # Define o timezone para America/Sao_Paulo
 sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
@@ -45,7 +45,7 @@ update-locale LANG=pt_BR.UTF-8
 # REPOSITORIO
 wget https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-1+ubuntu22.04_all.deb
 dpkg -i zabbix-release_6.4-1+ubuntu22.04_all.deb
-apt update
+sudo apt-get update -y
 
 # Adiciona o repositório do Grafana
 wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
@@ -74,6 +74,18 @@ quit;
 # EDIT CAMINHO /etc/zabbix/zabbix_server.conf
 sudo sed -i "s/^.DBPassword=.$/DBPassword=$ZABBIX_ADMIN_PASSWORD/g" /etc/zabbix/zabbix_server.conf
 sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone America\/Sao_Paulo/g' /etc/apache2/conf-enabled/zabbix.conf
+
+#FIX CACHESIZE
+sed s/'# CacheSize=8M'/'CacheSize=16M'/g -i /etc/zabbix/zabbix_server.conf
+cat <<'EOF' >> ~/.bashrc
+shopt -s histappend
+HISTFILESIZE=1000000
+HISTSIZE=1000000
+HISTCONTROL=ignoreboth
+HISTIGNORE='history'
+HISTTIMEFORMAT='%F %T '
+shopt -s cmdhist
+PROMPT_COMMAND='history -a'
 
 #Reinicia o serviço do Zabbix server e do Apache
 sudo systemctl restart zabbix-server zabbix-agent apache2
