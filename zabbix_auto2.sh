@@ -63,7 +63,7 @@ mysql -uroot --password="" -e "create user 'zabbix'@'localhost' identified by '$
 mysql -uroot --password="" -e "grant all privileges on zabbix.* to 'zabbix'@'localhost'";
 mysql -uroot --password="" -e "set global log_bin_trust_function_creators = 1";
 mysql -uroot --password="" -e "SELECT host, use FROM mysql.user";
-mysql -uroot --password="" -e "SHOW GRANS FOR 'zabbix'@'localhost'";
+mysql -uroot --password="" -e "SHOW GRANTS FOR 'zabbix'@'localhost'";
 quit;
 
 #SCHEMAS BANCO
