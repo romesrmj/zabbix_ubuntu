@@ -77,15 +77,6 @@ sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone Am
 
 #FIX CACHESIZE
 sed s/'# CacheSize=8M'/'CacheSize=16M'/g -i /etc/zabbix/zabbix_server.conf
-cat <<'EOF' >> ~/.bashrc
-shopt -s histappend
-HISTFILESIZE=1000000
-HISTSIZE=1000000
-HISTCONTROL=ignoreboth
-HISTIGNORE='history'
-HISTTIMEFORMAT='%F %T '
-shopt -s cmdhist
-PROMPT_COMMAND='history -a'
 
 #Reinicia o serviço do Zabbix server e do Apache
 sudo systemctl restart zabbix-server zabbix-agent apache2
