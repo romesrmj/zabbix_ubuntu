@@ -107,6 +107,8 @@ sudo grafana-cli plugins update alexanderzobnin-zabbix-app
 #Reinicia o serviço do Grafana
 sudo systemctl restart grafana-server
 
+clear
+
 #Imprime as informações de acesso
 echo "Zabbix URL: http://$(curl -s ifconfig.co):8080/zabbix"
 echo "Grafana URL: http://$(curl -s ifconfig.co):3000"
