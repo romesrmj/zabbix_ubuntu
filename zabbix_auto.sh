@@ -17,9 +17,6 @@ TIMEZONE="America/Sao_Paulo"
 # Define as portas a serem liberadas no firewall
 FIREWALL_PORTS=("80" "443" "3000" "10050" "10051")
 
-# Atualiza o sistema
-sudo apt-get update -y && sudo apt-get upgrade -y
-
 # Instalando DBConfi
 sudo apt-get install debconf
 sudo apt-get update -y
@@ -32,6 +29,9 @@ sudo service mysql start
 
 # Instala as dependências do Zabbix
 sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common nano needrestart 
+
+# Atualiza o sistema
+sudo apt-get update -y && sudo apt-get upgrade -y
 
 # Define o timezone para America/Sao_Paulo
 sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
