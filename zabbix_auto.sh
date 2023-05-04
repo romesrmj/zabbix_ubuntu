@@ -19,7 +19,7 @@ FIREWALL_PORTS=("80" "443" "3000" "10050" "10051")
 
 # Instalando DBConfi
 sudo apt-get install debconf
-sudo apt-get update -y
+sudo apt-get update && upgrade -y
 
 # Instala o MySQL e define a senha do root
 sudo apt-get install -y zabbix-server-mysql
@@ -31,7 +31,7 @@ sudo service mysql start
 sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-gd php-bcmath php-xml php-mbstring snmp snmpd snmp-mibs-downloader net-tools locales linux-headers-generic build-essential module-assistant software-properties-common nano needrestart 
 
 # Atualiza o sistema
-sudo apt-get update -y && sudo apt-get upgrade -y
+sudo apt-get update && upgrade -y
 
 # Define o timezone para America/Sao_Paulo
 sudo ln -fs /usr/share/zoneinfo/$TIMEZONE /etc/localtime
