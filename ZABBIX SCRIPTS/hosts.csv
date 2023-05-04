@@ -1,0 +1,5 @@
+group_name,host_name,host_ip
+Grupo 1,Web Server 1,192.168.1.1
+Grupo 1,Web Server 2,192.168.1.2
+Grupo 2,Database Server 1,192.168.2.1
+Grupo 2,Database Server 2,192.168.2.2
