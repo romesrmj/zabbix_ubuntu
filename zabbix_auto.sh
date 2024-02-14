@@ -80,60 +80,11 @@ sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone Am
 #FIX CACHESIZE
 sed s/'# CacheSize=8M'/'CacheSize=16M'/g -i /etc/zabbix/zabbix_server.conf
 
-# Locales desejados
-locales=(
-    "en_US.UTF-8"
-    "en_US.utf8"
-    "en_US.ISO8859-1"
-    "en_US.ISO8859-2"
-    "en_US.ISO8859-4"
-    "en_US.ISO8859-5"
-    "en_US.ISO8859-15"
-    "en_US.ISO8859-13"
-    "en_US.CP1131"
-    "en_US.CP1251"
-    "en_US.CP1251"
-    "en_US.CP949"
-    "en_US.KOI8-U"
-    "en_US.US-ASCII"
-    "en_US.eucKR"
-    "en_US.eucJP"
-    "en_US.SJIS"
-    "en_US.GB18030"
-    "en_US.GB2312"
-    "en_US.GBK"
-    "en_US.eucCN"
-    "en_US.Big5HKSCS"
-    "en_US.Big5"
-    "en_US.armscii8"
-    "en_US.cp1251"
-    "en_US.eucjp"
-    "en_US.euckr"
-    "en_US.euctw"
-    "en_US.gb18030"
-    "en_US.gbk"
-    "en_US.koi8r"
-    "en_US.tcvn"
-)
-
-# Configurar os locales
-echo "Configurando localidades..."
-for loc in "${locales[@]}"; do
-    echo "Adicionando localidade: $loc"
-    sudo locale-gen "$loc"
-done
-
-# Definir a primeira localidade como padrão
-default_locale="${locales[0]}"
-echo "Definindo $default_locale como a localidade padrão"
-echo "LANG=$default_locale" | sudo tee /etc/default/locale > /dev/null
-echo "LC_ALL=$default_locale" | sudo tee -a /etc/default/locale > /dev/null
-
-# Reconfigurar as localidades
-echo "Reconfigurando localidades..."
-sudo dpkg-reconfigure locales
-
-echo "Configuração de localidades concluída."
+## Configuração do suporte ao português brasileiro e outras linguas
+mkdir -p /var/lib/locales/supported.d/
+rm -f /var/lib/locales/supported.d/local
+cat /usr/share/zabbix/include/locales.inc.php | grep display | grep true | awk '{$1=$1};1' | cut -d"'" -f 2 | sort | xargs -I '{}' bash -c 'echo "{}.UTF-8 UTF-8"' >> /etc/locale.gen
+dpkg-reconfigure --frontend noninteractive locales
 
 /etc/init.d/zabbix-server restart
 
