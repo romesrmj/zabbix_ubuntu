@@ -24,11 +24,11 @@ sudo apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-agent
 # Importar esquema inicial para o banco de dados Zabbix
 zcat /usr/share/doc/zabbix-server-mysql*/create.sql.gz | mysql -uzabbix -p$DB_PASSWORD zabbix
 
-# Configurar Zabbix para usar o banco de dados
+# Configurar Zabbix para usar o banco de dados e ajustar timezone
 sudo sed -i "s/# DBPassword=/DBPassword=$DB_PASSWORD/" /etc/zabbix/zabbix_server.conf
 
-# Configurar Apache para Zabbix
-sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone UTC/' /etc/zabbix/apache.conf
+# Ajustar timezone para São Paulo no Zabbix
+sudo sed -i 's/# php_value date.timezone Europe\/Riga/php_value date.timezone America\/Sao_Paulo/' /etc/zabbix/apache.conf
 
 # Reiniciar serviços
 sudo systemctl restart zabbix-server zabbix-agent apache2
@@ -76,3 +76,5 @@ echo "- **Database Password**: $DB_PASSWORD" >> zabbix_grafana_credentials.md
 
 # Mostrar senha no terminal
 cat zabbix_grafana_credentials.md
+
+echo "Setup concluído. Verifique o arquivo zabbix_grafana_credentials.md para as credenciais do banco de dados."
