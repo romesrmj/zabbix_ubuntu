@@ -42,6 +42,32 @@ sudo apt install -y grafana
 sudo systemctl start grafana-server
 sudo systemctl enable grafana-server
 
+# Instalar plugin do Grafana (exemplo com o plugin Zabbix)
+sudo grafana-cli plugins install alexanderzobnin-zabbix-app
+
+# Reiniciar Grafana para ativar o plugin
+sudo systemctl restart grafana-server
+
+# Criar diretório para a configuração do Grafana
+sudo mkdir -p /etc/grafana/provisioning/datasources
+
+# Criar arquivo de configuração do data source do Zabbix
+cat << EOF | sudo tee /etc/grafana/provisioning/datasources/zabbix.yml
+apiVersion: 1
+datasources:
+  - name: Zabbix
+    type: alexanderzobnin-zabbix-datasource
+    access: proxy
+    url: http://localhost/zabbix
+    isDefault: true
+    jsonData:
+      username: Admin
+      password: zabbix
+EOF
+
+# Reiniciar Grafana para aplicar a configuração
+sudo systemctl restart grafana-server
+
 # Criar arquivo Markdown com a senha do banco de dados
 echo "# Zabbix & Grafana Setup" > zabbix_grafana_credentials.md
 echo "## Zabbix Database Credentials" >> zabbix_grafana_credentials.md
