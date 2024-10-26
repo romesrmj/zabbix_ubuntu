@@ -117,6 +117,11 @@ apt-get install -f -y || { echo "Erro ao corrigir dependências do Grafana"; exi
 echo "Reiniciando serviços do Grafana..."
 systemctl enable --now grafana-server || { echo "Erro ao habilitar o Grafana"; exit 1; }
 
+# Exibir informações do sistema com Neofetch
+echo "Exibindo informações do sistema..."
+apt-get install -y neofetch || { echo "Erro ao instalar o Neofetch"; exit 1; }
+neofetch
+
 # Finalização
 echo "Instalação do Zabbix e Grafana concluída com sucesso."
 echo "Acesse o Zabbix na URL: http://<IP_DO_SEU_SERVIDOR>/zabbix"
