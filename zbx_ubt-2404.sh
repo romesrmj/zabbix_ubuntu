@@ -78,17 +78,16 @@ dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; ex
 apt update -y
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
 
-# Importar esquema inicial para o banco de dados Zabbix
-echo "Importando esquema inicial para o banco de dados Zabbix..."
-ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
-
 # Verificar se o arquivo SQL existe
+ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
 if [ ! -f "$ZABBIX_SQL_FILE" ]; then
     echo "Arquivo SQL para Zabbix não encontrado. Tentando localizar o arquivo..."
-    ZABBIX_SQL_FILE=$(find /usr/share/doc/zabbix-server-mysql/ -name "create.sql.gz" 2>/dev/null)
+    # Tentar encontrar o arquivo em outros diretórios do Zabbix
+    ZABBIX_SQL_FILE=$(find /usr/share/doc/ -name "create.sql.gz" 2>/dev/null | grep zabbix)
 fi
 
 if [ -f "$ZABBIX_SQL_FILE" ]; then
+    echo "Importando esquema inicial para o banco de dados Zabbix..."
     zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
 else
     echo "Arquivo SQL para Zabbix não encontrado. Certifique-se de que o Zabbix foi instalado corretamente."
