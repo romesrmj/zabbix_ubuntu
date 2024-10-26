@@ -58,10 +58,14 @@ fi
 
 # Configuração do MySQL com verificação de existência do banco e usuário
 echo "Configuring MySQL..."
-mysql -uroot -e "CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || { echo "Erro ao criar banco de dados"; exit 1; }
-mysql -uroot -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || { echo "Erro ao criar usuário do banco de dados"; exit 1; }
-mysql -uroot -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || { echo "Erro ao conceder privilégios"; exit 1; }
-mysql -uroot -e "FLUSH PRIVILEGES;" || { echo "Erro ao atualizar privilégios"; exit 1; }
+mysql -uroot <<EOF
+-- Remover o banco de dados se já existir, para evitar erro de duplicação
+DROP DATABASE IF EXISTS $DB_NAME;
+CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;
+CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
+FLUSH PRIVILEGES;
+EOF
 
 # Tentar baixar o arquivo SQL diretamente do CDN do Zabbix
 if ! wget "https://cdn.zabbix.com/zabbix/schemas/create.sql.gz" -O "$ZABBIX_SQL_FILE"; then
