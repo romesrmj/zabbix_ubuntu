@@ -10,9 +10,28 @@ GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.
 
 # Função para remover o Zabbix e Grafana, se existir
 remove_existing() {
-    echo "Removendo Zabbix e Grafana existentes..."
-    systemctl stop zabbix-server zabbix-agent apache2 grafana-server
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana
+    echo "Removendo Zabbix e Grafana existentes, se houver..."
+    
+    # Verifica se o Zabbix está instalado
+    if dpkg -l | grep -q zabbix; then
+        echo "Parando serviços do Zabbix..."
+        systemctl stop zabbix-server zabbix-agent apache2
+        echo "Removendo Zabbix..."
+        apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent
+    else
+        echo "Zabbix não está instalado."
+    fi
+    
+    # Verifica se o Grafana está instalado
+    if dpkg -l | grep -q grafana; then
+        echo "Parando serviços do Grafana..."
+        systemctl stop grafana-server
+        echo "Removendo Grafana..."
+        apt-get purge -y grafana
+    else
+        echo "Grafana não está instalado."
+    fi
+
     apt-get autoremove -y
 }
 
