@@ -1,126 +1,96 @@
 #!/bin/bash
 
-# Variáveis
-ZABBIX_VERSION="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb"
-GRAFANA_VERSION="8.5.9"
-TIMEZONE="America/Sao_Paulo"
-LOCALE="pt_BR.UTF-8"
-DB_NAME="zabbix"
-DB_USER="zabbix"
-DB_PASSWORD=$(openssl rand -base64 12)  # Senha aleatória para segurança
-CREDENTIALS_FILE="/var/log/zabbix_credentials.log"  # Caminho do arquivo de log
-
-# Verificar se o script está sendo executado como root
+# Verificação de pré-requisitos e permissões
 if [[ "$EUID" -ne 0 ]]; then
     echo "Por favor, execute este script como root."
     exit 1
 fi
 
-# Configurar timezone e locale
-echo "Configuring timezone and locale..."
-timedatectl set-timezone "$TIMEZONE"
-locale-gen "$LOCALE"
-update-locale LANG="$LOCALE"
+# Função para criar uma senha aleatória
+generate_password() {
+    tr -dc A-Za-z0-9 </dev/urandom | head -c 12
+}
+
+# Solicitar a senha do root do MySQL
+read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
+echo
+
+# Parâmetros de configuração
+DB_NAME="zabbix_db"
+DB_USER="zabbix_user"
+DB_PASSWORD=$(generate_password)  # Senha do Zabbix
+GRAFANA_USER="admin"
+GRAFANA_PASSWORD=$(generate_password)  # Senha do Grafana
+
+# Função para remover instalações prévias do Zabbix e Grafana
+remove_existing_installations() {
+    echo "Removendo pacotes anteriores do Zabbix e Grafana..."
+    apt-get -y purge zabbix-* grafana*
+    apt-get -y autoremove
+    rm -rf /etc/zabbix /var/lib/zabbix /etc/grafana /var/lib/grafana
+}
+
+# Remover instalações anteriores
+remove_existing_installations
 
 # Instalar dependências
-echo "Updating system and installing prerequisites..."
-apt update -y
-apt install -y wget gnupg2 software-properties-common || { echo "Erro ao instalar pacotes necessários"; exit 1; }
+apt-get update
+apt-get install -y gnupg2 wget neofetch mysql-server
 
-# Instalar Zabbix
-echo "Installing Zabbix repository..."
-wget "$ZABBIX_VERSION" -O /tmp/zabbix-release.deb || { echo "Erro ao baixar o pacote Zabbix"; exit 1; }
-dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; exit 1; }
-apt update -y
+# Instalar Zabbix Server e Frontend
+wget https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_7.0-1+ubuntu24.04_all.deb
+dpkg -i zabbix-release_7.0-1+ubuntu24.04_all.deb
+apt-get update
+apt-get install -y zabbix-server-mysql zabbix-frontend-php zabbix-nginx-conf zabbix-agent
 
-echo "Installing Zabbix packages..."
-apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
+# Configuração do banco de dados MySQL para Zabbix
+mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "DROP DATABASE IF EXISTS ${DB_NAME};"
+mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';"
+mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"
+mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
+mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
+mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "FLUSH PRIVILEGES;"
 
-# Configurar banco de dados para Zabbix
-echo "Configuring MySQL database for Zabbix..."
-mysql -uroot <<EOF
-DROP DATABASE IF EXISTS $DB_NAME;  -- Remove o banco de dados existente
-CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
-CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';  -- Cria o usuário
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';  -- Concede permissões
-SET GLOBAL log_bin_trust_function_creators = 1;
-FLUSH PRIVILEGES;
-EOF
+# Importar esquema inicial do Zabbix
+zcat /usr/share/doc/zabbix-server-mysql*/create.sql.gz | mysql -u"${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}"
 
-# Verificar se o usuário foi criado corretamente e as permissões
-echo "Verifying Zabbix user and permissions..."
-mysql -uroot -e "SELECT user, host FROM mysql.user WHERE user = '$DB_USER';"
+# Configuração do Zabbix Server
+sed -i "s/# DBHost=localhost/DBHost=localhost/" /etc/zabbix/zabbix_server.conf
+sed -i "s/# DBPassword=/DBPassword=${DB_PASSWORD}/" /etc/zabbix/zabbix_server.conf
 
-# Importar o esquema inicial do Zabbix usando o usuário root
-SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
+# Iniciar serviços do Zabbix
+systemctl enable --now zabbix-server zabbix-agent nginx php-fpm
 
-if [[ -f "$SQL_FILE" ]]; then
-    echo "Importing Zabbix schema as root..."
-    zcat "$SQL_FILE" | mysql --default-character-set=utf8mb4 -uroot "$DB_NAME" || { echo "Erro ao importar o esquema do Zabbix"; exit 1; }
-else
-    echo "Arquivo SQL não encontrado em $SQL_FILE. Verifique a instalação do Zabbix."
-    exit 1
-fi
+# Instalação do Grafana
+wget https://dl.grafana.com/oss/release/grafana_8.5.9_amd64.deb
+dpkg -i grafana_8.5.9_amd64.deb
+systemctl enable --now grafana-server
 
-# Reverter log_bin_trust_function_creators após a importação
-mysql -uroot <<EOF
-SET GLOBAL log_bin_trust_function_creators = 0;
-EOF
+# Configurar Grafana com o Zabbix como fonte de dados
+grafana-cli admin reset-admin-password "${GRAFANA_PASSWORD}"
+cat <<EOL > /etc/grafana/provisioning/datasources/zabbix.yml
+apiVersion: 1
+datasources:
+  - name: Zabbix
+    type: alexanderzobnin-zabbix-datasource
+    url: http://localhost/zabbix
+    access: proxy
+    basicAuth: true
+    basicAuthUser: ${DB_USER}
+    basicAuthPassword: ${DB_PASSWORD}
+EOL
 
-# Configurar arquivo zabbix_server.conf
-echo "Configuring Zabbix server..."
-sed -i "s/^DBPassword=.*/DBPassword=$DB_PASSWORD/" /etc/zabbix/zabbix_server.conf
+# Restart Grafana para aplicar a configuração do datasource
+systemctl restart grafana-server
 
-# Configurar PHP para Zabbix
-sed -i "s/^;date.timezone =.*/date.timezone = $TIMEZONE/" /etc/zabbix/apache.conf
-
-# Reiniciar serviços Zabbix e Apache
-echo "Starting Zabbix and Apache services..."
-systemctl restart zabbix-server zabbix-agent apache2
-systemctl enable zabbix-server zabbix-agent apache2
-
-# Instalar Grafana versão 8.5.9
-echo "Installing Grafana version $GRAFANA_VERSION..."
-wget "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -O /tmp/grafana.deb || { echo "Erro ao baixar o pacote Grafana"; exit 1; }
-dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar Grafana"; exit 1; }
-apt install -f -y || { echo "Erro ao instalar dependências do Grafana"; exit 1; }
-
-systemctl daemon-reload
-systemctl start grafana-server
-systemctl enable grafana-server
-
-# Criar script para registrar as credenciais
-echo "Creating credentials logging script..."
-cat <<EOF > /usr/local/bin/log_zabbix_credentials.sh
-#!/bin/bash
-echo "Zabbix Database Name: $DB_NAME" > $CREDENTIALS_FILE
-echo "Zabbix Database User: $DB_USER" >> $CREDENTIALS_FILE
-echo "Zabbix Database Password: $DB_PASSWORD" >> $CREDENTIALS_FILE
-EOF
-
-# Tornar o script executável
-chmod +x /usr/local/bin/log_zabbix_credentials.sh
-
-# Criar arquivo de serviço systemd
-echo "Creating systemd service to log Zabbix credentials on boot..."
-cat <<EOF > /etc/systemd/system/log_zabbix_credentials.service
-[Unit]
-Description=Log Zabbix Credentials
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/log_zabbix_credentials.sh
-RemainAfterExit=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Habilitar e iniciar o serviço
-systemctl enable log_zabbix_credentials.service
-systemctl start log_zabbix_credentials.service
-
-# Mensagens de conclusão
-echo "Installation complete."
-echo "Credenciais do Zabbix registradas em $CREDENTIALS_FILE."
-echo "Você pode verificar o arquivo de log para as credenciais."
+# Exibir as informações de acesso
+clear
+neofetch
+echo -e "\n*** INFORMAÇÕES DE ACESSO ***"
+echo -e "\nZabbix Web URL: http://<host_ip>/zabbix"
+echo -e "Usuário do banco de dados Zabbix: ${DB_USER}"
+echo -e "Senha do banco de dados Zabbix: ${DB_PASSWORD}\n"
+echo -e "Grafana Web URL: http://<host_ip>:3000"
+echo -e "Usuário Grafana: ${GRAFANA_USER}"
+echo -e "Senha Grafana: ${GRAFANA_PASSWORD}\n"
+echo -e "Para mais informações sobre o status do sistema, use 'neofetch'"
