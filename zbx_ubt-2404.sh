@@ -11,9 +11,9 @@ GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.
 # Função para remover o Zabbix e Grafana, se existir
 remove_existing() {
     echo "Removendo Zabbix e Grafana existentes..."
-    systemctl stop zabbix-server zabbix-agent apache2 grafana-server
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana
-    apt-get autoremove -y
+    systemctl stop zabbix-server zabbix-agent apache2 grafana-server || echo "Falha ao parar serviços do Zabbix e Grafana."
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana || echo "Falha ao remover pacotes existentes."
+    apt-get autoremove -y || echo "Falha ao remover pacotes não utilizados."
 }
 
 # Função para instalar pacotes necessários
@@ -45,12 +45,17 @@ timedatectl set-timezone "$TIMEZONE" || { echo "Erro ao definir o timezone"; exi
 
 # Instalar pacotes necessários
 echo "Atualizando sistema e instalando pré-requisitos..."
-apt update -y
+apt update -y || { echo "Erro ao atualizar o sistema"; exit 1; }
 install_packages
 
 # Configurar locale
 echo "Configurando locale..."
-locale-gen "$LOCALE" || { echo "Erro ao gerar locale"; exit 1; }
+if ! locale-gen "$LOCALE"; then
+    echo "Erro ao gerar locale, instalando o pacote locales..."
+    apt-get install -y locales || { echo "Erro ao instalar o pacote locales"; exit 1; }
+    locale-gen "$LOCALE" || { echo "Erro ao gerar locale após instalar locales"; exit 1; }
+fi
+
 update-locale LANG="$LOCALE" || { echo "Erro ao atualizar locale"; exit 1; }
 
 # Solicitar a senha do root do MySQL
@@ -86,7 +91,7 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || { echo "Erro ao 
 echo "Instalando Zabbix..."
 wget "$ZABBIX_VERSION" -O /tmp/zabbix-release.deb || { echo "Erro ao baixar o pacote Zabbix"; exit 1; }
 dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; exit 1; }
-apt update -y
+apt update -y || { echo "Erro ao atualizar o sistema após instalar Zabbix"; exit 1; }
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
 
 # Verificar se o arquivo SQL existe
@@ -110,16 +115,21 @@ fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
-zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
+if zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME"; then
+    echo "Esquema importado com sucesso."
+else
+    echo "Erro ao importar o esquema do banco de dados Zabbix."
+    exit 1
+fi
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
-sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf
+sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
 
 # Reiniciar serviços do Zabbix
 echo "Reiniciando serviços do Zabbix..."
-systemctl restart zabbix-server zabbix-agent apache2
-systemctl enable zabbix-server zabbix-agent apache2
+systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar serviços do Zabbix"; exit 1; }
+systemctl enable zabbix-server zabbix-agent apache2 || { echo "Erro ao habilitar serviços do Zabbix"; exit 1; }
 
 # Instalar Grafana
 echo "Instalando Grafana..."
