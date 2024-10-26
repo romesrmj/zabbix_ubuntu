@@ -65,15 +65,28 @@ GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-# Localizar o arquivo SQL para o Zabbix
-ZABBIX_SQL_FILE=$(find /usr/share/doc/zabbix-server-mysql/ -name "create.sql.gz" | head -n 1)
+# Buscar o arquivo SQL do Zabbix em possíveis diretórios
+POSSIBLE_LOCATIONS=(
+    "/usr/share/doc/zabbix-server-mysql/create.sql.gz"
+    "/usr/share/zabbix-server-mysql/create.sql.gz"
+    "/usr/share/doc/zabbix-server-mysql*/create.sql.gz"
+)
 
-if [[ -f "$ZABBIX_SQL_FILE" ]]; then
+ZABBIX_SQL_FILE=""
+
+for location in "${POSSIBLE_LOCATIONS[@]}"; do
+    if [[ -f "$location" ]]; then
+        ZABBIX_SQL_FILE="$location"
+        break
+    fi
+done
+
+if [[ -z "$ZABBIX_SQL_FILE" ]]; then
+    echo "Arquivo SQL para Zabbix não encontrado. Baixe manualmente de https://cdn.zabbix.com/ e coloque no diretório desejado."
+    exit 1
+else
     echo "Importing initial schema to Zabbix database..."
     zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
-else
-    echo "Arquivo SQL para Zabbix não encontrado em /usr/share/doc/zabbix-server-mysql/. Verifique a instalação do Zabbix."
-    exit 1
 fi
 
 # Atualizar configuração do Zabbix
