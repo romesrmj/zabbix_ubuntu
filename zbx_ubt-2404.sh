@@ -45,7 +45,7 @@ SET GLOBAL log_bin_trust_function_creators = 1;
 FLUSH PRIVILEGES;
 EOF
 
-# Importar o esquema inicial do Zabbix
+# Importar o esquema inicial do Zabbix com a senha fornecida de maneira mais segura
 SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
 
 if [[ -f "$SQL_FILE" ]]; then
