@@ -2,6 +2,7 @@
 
 # Variáveis
 ZABBIX_VERSION="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb"
+GRAFANA_VERSION="8.5.9"
 TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
 DB_NAME="zabbix"
@@ -72,12 +73,11 @@ echo "Starting Zabbix and Apache services..."
 systemctl restart zabbix-server zabbix-agent apache2
 systemctl enable zabbix-server zabbix-agent apache2
 
-# Instalar e configurar Grafana
-echo "Installing Grafana latest version..."
-wget -q -O - https://packages.grafana.com/gpg.key | apt-key add -
-add-apt-repository "deb https://packages.grafana.com/oss/deb stable main"
-apt update -y
-apt install -y grafana || { echo "Erro ao instalar Grafana"; exit 1; }
+# Instalar Grafana versão 8.5.9
+echo "Installing Grafana version $GRAFANA_VERSION..."
+wget "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -O /tmp/grafana.deb || { echo "Erro ao baixar o pacote Grafana"; exit 1; }
+dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar Grafana"; exit 1; }
+apt install -f -y || { echo "Erro ao instalar dependências do Grafana"; exit 1; }
 
 systemctl daemon-reload
 systemctl start grafana-server
@@ -88,4 +88,4 @@ echo "Installation complete."
 echo "Zabbix database name: $DB_NAME"
 echo "Zabbix database user: $DB_USER"
 echo "Zabbix database password: $DB_PASSWORD"
-echo "Grafana installed and running."
+echo "Grafana version $GRAFANA_VERSION installed and running."
