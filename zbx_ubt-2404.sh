@@ -8,6 +8,7 @@ LOCALE="pt_BR.UTF-8"
 DB_NAME="zabbix"
 DB_USER="zabbix"
 DB_PASSWORD=$(openssl rand -base64 12)  # Senha aleatória para segurança
+CREDENTIALS_FILE="/var/log/zabbix_credentials.log"  # Caminho do arquivo de log
 
 # Verificar se o script está sendo executado como root
 if [[ "$EUID" -ne 0 ]]; then
@@ -40,11 +41,15 @@ echo "Configuring MySQL database for Zabbix..."
 mysql -uroot <<EOF
 DROP DATABASE IF EXISTS $DB_NAME;  -- Remove o banco de dados existente
 CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
-CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
+CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';  -- Cria o usuário
+GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';  -- Concede permissões
 SET GLOBAL log_bin_trust_function_creators = 1;
 FLUSH PRIVILEGES;
 EOF
+
+# Verificar se o usuário foi criado corretamente e as permissões
+echo "Verifying Zabbix user and permissions..."
+mysql -uroot -e "SELECT user, host FROM mysql.user WHERE user = '$DB_USER';"
 
 # Importar o esquema inicial do Zabbix usando o usuário root
 SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
@@ -84,9 +89,38 @@ systemctl daemon-reload
 systemctl start grafana-server
 systemctl enable grafana-server
 
-# Mensagens de conclusão e credenciais
+# Criar script para registrar as credenciais
+echo "Creating credentials logging script..."
+cat <<EOF > /usr/local/bin/log_zabbix_credentials.sh
+#!/bin/bash
+echo "Zabbix Database Name: $DB_NAME" > $CREDENTIALS_FILE
+echo "Zabbix Database User: $DB_USER" >> $CREDENTIALS_FILE
+echo "Zabbix Database Password: $DB_PASSWORD" >> $CREDENTIALS_FILE
+EOF
+
+# Tornar o script executável
+chmod +x /usr/local/bin/log_zabbix_credentials.sh
+
+# Criar arquivo de serviço systemd
+echo "Creating systemd service to log Zabbix credentials on boot..."
+cat <<EOF > /etc/systemd/system/log_zabbix_credentials.service
+[Unit]
+Description=Log Zabbix Credentials
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/log_zabbix_credentials.sh
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Habilitar e iniciar o serviço
+systemctl enable log_zabbix_credentials.service
+systemctl start log_zabbix_credentials.service
+
+# Mensagens de conclusão
 echo "Installation complete."
-echo "Zabbix database name: $DB_NAME"
-echo "Zabbix database user: $DB_USER"
-echo "Zabbix database password: $DB_PASSWORD"
-echo "Grafana version $GRAFANA_VERSION installed and running."
+echo "Credenciais do Zabbix registradas em $CREDENTIALS_FILE."
+echo "Você pode verificar o arquivo de log para as credenciais."
