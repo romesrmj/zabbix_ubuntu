@@ -6,12 +6,13 @@ TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
 DB_NAME="zabbix_db"
 DB_USER="zabbix_user"
+GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"  # Exemplo de URL do Grafana
 
-# Função para remover o Zabbix, se existir
-remove_zabbix() {
-    echo "Removendo Zabbix existente..."
-    systemctl stop zabbix-server zabbix-agent apache2
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent
+# Função para remover o Zabbix e Grafana, se existir
+remove_existing() {
+    echo "Removendo Zabbix e Grafana existentes..."
+    systemctl stop zabbix-server zabbix-agent apache2 grafana-server
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana
     apt-get autoremove -y
 }
 
@@ -21,8 +22,8 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
 fi
 
-# Remover instalação anterior do Zabbix, se houver
-remove_zabbix
+# Remover instalação anterior do Zabbix e Grafana, se houver
+remove_existing
 
 # Configurar timezone
 echo "Configurando timezone..."
@@ -36,11 +37,7 @@ update-locale LANG=$LOCALE || { echo "Erro ao configurar o locale"; exit 1; }
 # Instalar pacotes necessários
 echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
-apt install -y wget gnupg2 software-properties-common || { echo "Erro ao instalar pacotes necessários"; exit 1; }
-
-# Instalar MySQL Server
-echo "Instalando MySQL Server..."
-apt install -y mysql-server || { echo "Erro ao instalar MySQL Server"; exit 1; }
+apt install -y wget gnupg2 software-properties-common mysql-server || { echo "Erro ao instalar pacotes necessários"; exit 1; }
 
 # Solicitar a senha do root do MySQL
 read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
@@ -51,25 +48,25 @@ read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
 echo
 
 # Verificar se o banco de dados existe e remover se necessário
-DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';")
+DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null)
 if [[ -n "$DB_EXIST" ]]; then
     echo "O banco de dados '$DB_NAME' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || { echo "Erro ao remover o banco de dados"; exit 1; }
 fi
 
 # Verificar se o usuário existe e remover se necessário
-USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');")
+USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
 if [[ "$USER_EXIST" == *"1"* ]]; then
     echo "O usuário '$DB_USER' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || { echo "Erro ao remover o usuário"; exit 1; }
 fi
 
 # Criar banco de dados e usuário do Zabbix
 echo "Criando banco de dados e usuário do Zabbix..."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;"
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';"
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || { echo "Erro ao criar o banco de dados"; exit 1; }
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || { echo "Erro ao criar o usuário"; exit 1; }
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || { echo "Erro ao conceder privilégios"; exit 1; }
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || { echo "Erro ao atualizar privilégios"; exit 1; }
 
 # Instalar Zabbix
 echo "Instalando Zabbix..."
@@ -80,19 +77,26 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 
 # Verificar se o arquivo SQL existe
 ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
-if [ ! -f "$ZABBIX_SQL_FILE" ]; then
-    echo "Arquivo SQL para Zabbix não encontrado. Tentando localizar o arquivo..."
-    # Tentar encontrar o arquivo em outros diretórios do Zabbix
+
+# Verificação do arquivo SQL
+if [ -f "$ZABBIX_SQL_FILE" ]; then
+    echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
+else
+    echo "Arquivo SQL para Zabbix não encontrado em: $ZABBIX_SQL_FILE"
+    echo "Tentando localizar o arquivo SQL em outros diretórios..."
     ZABBIX_SQL_FILE=$(find /usr/share/doc/ -name "create.sql.gz" 2>/dev/null | grep zabbix)
+
+    if [ -n "$ZABBIX_SQL_FILE" ]; then
+        echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
+    else
+        echo "Arquivo SQL para Zabbix não encontrado. Certifique-se de que o Zabbix foi instalado corretamente."
+        exit 1
+    fi
 fi
 
-if [ -f "$ZABBIX_SQL_FILE" ]; then
-    echo "Importando esquema inicial para o banco de dados Zabbix..."
-    zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
-else
-    echo "Arquivo SQL para Zabbix não encontrado. Certifique-se de que o Zabbix foi instalado corretamente."
-    exit 1
-fi
+# Importar o esquema inicial para o banco de dados Zabbix
+echo "Importando esquema inicial para o banco de dados Zabbix..."
+zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
@@ -103,6 +107,17 @@ echo "Reiniciando serviços do Zabbix..."
 systemctl restart zabbix-server zabbix-agent apache2
 systemctl enable zabbix-server zabbix-agent apache2
 
+# Instalar Grafana
+echo "Instalando Grafana..."
+wget "$GRAFANA_VERSION" -O /tmp/grafana.deb || { echo "Erro ao baixar o pacote Grafana"; exit 1; }
+dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar o pacote Grafana"; exit 1; }
+apt-get install -f -y || { echo "Erro ao corrigir dependências do Grafana"; exit 1; }
+
+# Reiniciar e habilitar o serviço do Grafana
+echo "Reiniciando serviços do Grafana..."
+systemctl enable --now grafana-server || { echo "Erro ao habilitar o Grafana"; exit 1; }
+
 # Finalização
-echo "Instalação do Zabbix concluída com sucesso."
+echo "Instalação do Zabbix e Grafana concluída com sucesso."
 echo "Acesse o Zabbix na URL: http://<IP_DO_SEU_SERVIDOR>/zabbix"
+echo "Acesse o Grafana na URL: http://<IP_DO_SEU_SERVIDOR>:3000"
