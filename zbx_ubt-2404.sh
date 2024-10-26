@@ -47,7 +47,6 @@ echo "Configuring Zabbix database..."
 DB_NAME="zabbix_db"
 DB_USER="zabbix_user"
 DB_PASSWORD=$(generate_password)
-MYSQL_ROOT_PASSWORD=$(generate_password)
 
 # Instalar MySQL Server e configurar
 echo "Installing MySQL Server..."
@@ -57,9 +56,65 @@ apt install -y mysql-server || { echo "Erro ao instalar MySQL Server"; exit 1; }
 echo "Configuring MySQL..."
 mysql -uroot -e "CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || { echo "Erro ao criar banco de dados"; exit 1; }
 mysql -uroot -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';" || { echo "Erro ao criar usuário do banco de dados"; exit 1; }
-mysql -uroot -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
-mysql -uroot -e "FLUSH PRIVILEGES;" || { echo "Erro ao configurar privilégios do banco de dados"; exit 1; }
+mysql -uroot -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || { echo "Erro ao conceder privilégios"; exit 1; }
+mysql -uroot -e "FLUSH PRIVILEGES;" || { echo "Erro ao atualizar privilégios"; exit 1; }
 
 # Tentar baixar o arquivo SQL diretamente do CDN do Zabbix
-if ! wget "$ZABBIX_SQL_FILE" -O "$ZABBIX_SQL_FILE"; then
-    echo "Erro ao baixar o arqui
+if ! wget "https://cdn.zabbix.com/zabbix/schemas/create.sql.gz" -O "$ZABBIX_SQL_FILE"; then
+    echo "Erro ao baixar o arquivo SQL do Zabbix. Verifique sua conexão com a internet."
+    exit 1
+fi
+
+# Importar o arquivo SQL para o MySQL
+if [ -f "$ZABBIX_SQL_FILE" ]; then
+    echo "Importing initial schema to Zabbix database..."
+    zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
+else
+    echo "Arquivo SQL para Zabbix não encontrado. Verifique o local manualmente e atualize o caminho no script."
+    exit 1
+fi
+
+# Atualizar configuração do Zabbix
+sed -i "s/^DBPassword=.*/DBPassword=$DB_PASSWORD/" /etc/zabbix/zabbix_server.conf
+
+# Configurar PHP para Zabbix
+sed -i "s/^;date.timezone =.*/date.timezone = $TIMEZONE/" /etc/zabbix/apache.conf
+
+# Reiniciar serviços do Zabbix e verificar status
+echo "Restarting Zabbix services..."
+systemctl restart zabbix-server zabbix-agent apache2
+systemctl enable zabbix-server zabbix-agent apache2
+
+if systemctl is-active --quiet zabbix-server && systemctl is-active --quiet apache2; then
+    echo "Zabbix server e Apache foram iniciados com sucesso."
+else
+    echo "Erro ao iniciar os serviços Zabbix ou Apache."
+    exit 1
+fi
+
+# Instalar Grafana
+echo "Installing Grafana..."
+wget "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -O /tmp/grafana.deb || { echo "Erro ao baixar o pacote Grafana"; exit 1; }
+dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar Grafana"; exit 1; }
+apt install -f -y || { echo "Erro ao instalar dependências do Grafana"; exit 1; }
+
+# Configurar Grafana para iniciar com o sistema
+echo "Starting Grafana..."
+systemctl daemon-reload
+systemctl start grafana-server
+systemctl enable grafana-server
+
+if systemctl is-active --quiet grafana-server; then
+    echo "Grafana foi iniciado com sucesso."
+else
+    echo "Erro ao iniciar o Grafana."
+    exit 1
+fi
+
+# Finalização
+echo "Installation complete."
+echo "Zabbix database name: $DB_NAME"
+echo "Zabbix database user: $DB_USER"
+echo "Zabbix database password: $DB_PASSWORD"
+echo "Grafana version $GRAFANA_VERSION installed and running."
+echo "Zabbix and Grafana should be accessible shortly."
