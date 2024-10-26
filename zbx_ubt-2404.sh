@@ -27,8 +27,8 @@ timedatectl set-timezone "$TIMEZONE" || { echo "Erro ao definir o timezone"; exi
 
 # Configurar locale
 echo "Configuring locale..."
-locale-gen $LOCALE
-update-locale LANG=$LOCALE || { echo "Erro ao configurar o locale"; exit 1; }
+locale-gen "$LOCALE"
+update-locale LANG="$LOCALE" || { echo "Erro ao configurar o locale"; exit 1; }
 
 # Instalar pacotes necessários
 echo "Updating system and installing prerequisites..."
@@ -48,9 +48,13 @@ DB_NAME="zabbix_db"
 DB_USER="zabbix_user"
 DB_PASSWORD=$(generate_password)
 
-# Instalar MySQL Server e configurar
-echo "Installing MySQL Server..."
-apt install -y mysql-server || { echo "Erro ao instalar MySQL Server"; exit 1; }
+# Verificar se o MySQL Server já está instalado
+if ! dpkg -l | grep -q "mysql-server"; then
+    echo "Installing MySQL Server..."
+    apt install -y mysql-server || { echo "Erro ao instalar MySQL Server"; exit 1; }
+else
+    echo "MySQL Server já está instalado, pulando a instalação..."
+fi
 
 # Configuração do MySQL com verificação de existência do banco e usuário
 echo "Configuring MySQL..."
