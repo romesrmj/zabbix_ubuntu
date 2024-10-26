@@ -73,11 +73,29 @@ if [[ -n "$DB_EXIST" ]]; then
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || { echo "Erro ao remover o banco de dados"; exit 1; }
 fi
 
+# Função para remover um usuário do MySQL
+remove_user() {
+    local user="$1"
+    echo "Tentando remover o usuário '$user'..."
+    
+    # Verifica se o usuário está conectado
+    if mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW PROCESSLIST;" | grep -q "$user"; then
+        echo "O usuário '$user' está conectado. Por favor, desconecte-o antes de prosseguir."
+        exit 1
+    fi
+
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$user'@'localhost';" 2>/dev/null
+    if [[ $? -eq 0 ]]; then
+        echo "Usuário '$user' removido com sucesso."
+    else
+        echo "Erro ao remover o usuário '$user'. Pode ser que ele não exista."
+    fi
+}
+
 # Verificar se o usuário existe e remover se necessário
 USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
 if [[ "$USER_EXIST" == *"1"* ]]; then
-    echo "O usuário '$DB_USER' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || { echo "Erro ao remover o usuário"; exit 1; }
+    remove_user "$DB_USER"
 fi
 
 # Criar banco de dados e usuário do Zabbix
