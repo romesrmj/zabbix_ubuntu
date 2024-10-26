@@ -6,28 +6,14 @@ TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
 DB_NAME="zabbix_db"
 DB_USER="zabbix_user"
-GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"  # Exemplo de URL do Grafana
+GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"
 
 # Função para remover o Zabbix e Grafana, se existir
 remove_existing() {
     echo "Removendo Zabbix e Grafana existentes..."
-    systemctl stop zabbix-server zabbix-agent apache2 grafana-server || echo "Falha ao parar serviços do Zabbix e Grafana."
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana || echo "Falha ao remover pacotes existentes."
-    apt-get autoremove -y || echo "Falha ao remover pacotes não utilizados."
-}
-
-# Função para instalar pacotes necessários
-install_packages() {
-    local packages=("wget" "gnupg2" "software-properties-common" "mysql-server" "apache2" "php" "php-mysql" "php-gd" "php-mbstring" "php-xml" "php-bcmath" "php-json" "locales")
-
-    for package in "${packages[@]}"; do
-        if ! dpkg -l | grep -qw "$package"; then
-            echo "Instalando $package..."
-            apt-get install -y "$package" || { echo "Erro ao instalar $package"; exit 1; }
-        else
-            echo "$package já está instalado."
-        fi
-    done
+    systemctl stop zabbix-server zabbix-agent apache2 grafana-server
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana
+    apt-get autoremove -y
 }
 
 # Verificar se o script está sendo executado como root
@@ -36,6 +22,11 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
 fi
 
+# Atualizar sistema e pacotes
+echo "Atualizando o sistema e instalando pré-requisitos..."
+apt update -y || { echo "Erro ao atualizar a lista de pacotes"; exit 1; }
+apt upgrade -y || { echo "Erro ao atualizar os pacotes"; exit 1; }
+
 # Remover instalação anterior do Zabbix e Grafana, se houver
 remove_existing
 
@@ -43,20 +34,14 @@ remove_existing
 echo "Configurando timezone..."
 timedatectl set-timezone "$TIMEZONE" || { echo "Erro ao definir o timezone"; exit 1; }
 
-# Instalar pacotes necessários
-echo "Atualizando sistema e instalando pré-requisitos..."
-apt update -y || { echo "Erro ao atualizar o sistema"; exit 1; }
-install_packages
-
 # Configurar locale
 echo "Configurando locale..."
-if ! locale-gen "$LOCALE"; then
-    echo "Erro ao gerar locale, instalando o pacote locales..."
-    apt-get install -y locales || { echo "Erro ao instalar o pacote locales"; exit 1; }
-    locale-gen "$LOCALE" || { echo "Erro ao gerar locale após instalar locales"; exit 1; }
-fi
+locale-gen $LOCALE
+update-locale LANG=$LOCALE || { echo "Erro ao configurar o locale"; exit 1; }
 
-update-locale LANG="$LOCALE" || { echo "Erro ao atualizar locale"; exit 1; }
+# Instalar pacotes necessários
+echo "Instalando pacotes necessários..."
+apt install -y wget gnupg2 software-properties-common mysql-server || { echo "Erro ao instalar pacotes necessários"; exit 1; }
 
 # Solicitar a senha do root do MySQL
 read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
@@ -73,29 +58,11 @@ if [[ -n "$DB_EXIST" ]]; then
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || { echo "Erro ao remover o banco de dados"; exit 1; }
 fi
 
-# Função para remover um usuário do MySQL
-remove_user() {
-    local user="$1"
-    echo "Tentando remover o usuário '$user'..."
-    
-    # Verifica se o usuário está conectado
-    if mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW PROCESSLIST;" | grep -q "$user"; then
-        echo "O usuário '$user' está conectado. Por favor, desconecte-o antes de prosseguir."
-        exit 1
-    fi
-
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$user'@'localhost';" 2>/dev/null
-    if [[ $? -eq 0 ]]; then
-        echo "Usuário '$user' removido com sucesso."
-    else
-        echo "Erro ao remover o usuário '$user'. Pode ser que ele não exista."
-    fi
-}
-
 # Verificar se o usuário existe e remover se necessário
 USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
 if [[ "$USER_EXIST" == *"1"* ]]; then
-    remove_user "$DB_USER"
+    echo "O usuário '$DB_USER' já existe. Removendo..."
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || { echo "Erro ao remover o usuário"; exit 1; }
 fi
 
 # Criar banco de dados e usuário do Zabbix
@@ -109,7 +76,7 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || { echo "Erro ao 
 echo "Instalando Zabbix..."
 wget "$ZABBIX_VERSION" -O /tmp/zabbix-release.deb || { echo "Erro ao baixar o pacote Zabbix"; exit 1; }
 dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; exit 1; }
-apt update -y || { echo "Erro ao atualizar o sistema após instalar Zabbix"; exit 1; }
+apt update -y
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
 
 # Verificar se o arquivo SQL existe
@@ -133,21 +100,16 @@ fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
-if zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME"; then
-    echo "Esquema importado com sucesso."
-else
-    echo "Erro ao importar o esquema do banco de dados Zabbix."
-    exit 1
-fi
+zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
-sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf
 
 # Reiniciar serviços do Zabbix
 echo "Reiniciando serviços do Zabbix..."
-systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar serviços do Zabbix"; exit 1; }
-systemctl enable zabbix-server zabbix-agent apache2 || { echo "Erro ao habilitar serviços do Zabbix"; exit 1; }
+systemctl restart zabbix-server zabbix-agent apache2
+systemctl enable zabbix-server zabbix-agent apache2
 
 # Instalar Grafana
 echo "Instalando Grafana..."
