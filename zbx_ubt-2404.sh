@@ -18,7 +18,7 @@ remove_existing() {
 
 # Função para instalar pacotes necessários
 install_packages() {
-    local packages=("wget" "gnupg2" "software-properties-common" "mysql-server" "apache2" "php" "php-mysql" "php-gd" "php-mbstring" "php-xml" "php-bcmath" "php-json")
+    local packages=("wget" "gnupg2" "software-properties-common" "mysql-server" "apache2" "php" "php-mysql" "php-gd" "php-mbstring" "php-xml" "php-bcmath" "php-json" "locales")
 
     for package in "${packages[@]}"; do
         if ! dpkg -l | grep -qw "$package"; then
@@ -43,15 +43,15 @@ remove_existing
 echo "Configurando timezone..."
 timedatectl set-timezone "$TIMEZONE" || { echo "Erro ao definir o timezone"; exit 1; }
 
-# Configurar locale
-echo "Configurando locale..."
-locale-gen $LOCALE
-update-locale LANG=$LOCALE || { echo "Erro ao configurar o locale"; exit 1; }
-
 # Instalar pacotes necessários
 echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
 install_packages
+
+# Configurar locale
+echo "Configurando locale..."
+locale-gen "$LOCALE" || { echo "Erro ao gerar locale"; exit 1; }
+update-locale LANG="$LOCALE" || { echo "Erro ao atualizar locale"; exit 1; }
 
 # Solicitar a senha do root do MySQL
 read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
