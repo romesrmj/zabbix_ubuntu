@@ -18,6 +18,24 @@ check_install() {
     fi
 }
 
+# Função para verificar se o banco de dados e o usuário existem
+check_db_user() {
+    local db_exists=$(mysql -uroot -p -e "SHOW DATABASES LIKE '$DB_NAME';" | grep "$DB_NAME" | wc -l)
+    local user_exists=$(mysql -uroot -p -e "SELECT User FROM mysql.user WHERE User = '$DB_USER';" | grep "$DB_USER" | wc -l)
+
+    if [ "$db_exists" -eq 1 ]; then
+        echo "O banco de dados '$DB_NAME' já existe."
+    else
+        echo "O banco de dados '$DB_NAME' não existe."
+    fi
+
+    if [ "$user_exists" -eq 1 ]; then
+        echo "O usuário '$DB_USER' já existe."
+    else
+        echo "O usuário '$DB_USER' não existe."
+    fi
+}
+
 # Função para remover pacotes existentes do Zabbix
 remove_zabbix() {
     echo "Verificando se há entidades do Zabbix instaladas..."
@@ -41,11 +59,18 @@ setup_mysql() {
     # Inicializando o banco de dados
     service mysql start
 
+    # Verificar se o banco de dados e usuário existem
+    check_db_user
+
+    # Remover banco de dados e usuário existentes, se existirem
+    mysql -uroot -p -e "DROP DATABASE IF EXISTS $DB_NAME;"
+    mysql -uroot -p -e "DROP USER IF EXISTS '$DB_USER'@'localhost';"
+
     # Criando o banco de dados e usuário
-    mysql -e "CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;"
-    mysql -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
-    mysql -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
-    mysql -e "FLUSH PRIVILEGES;"
+    mysql -uroot -p -e "CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;"
+    mysql -uroot -p -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
+    mysql -uroot -p -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
+    mysql -uroot -p -e "FLUSH PRIVILEGES;"
 }
 
 # Verifica se o script está sendo executado como root
