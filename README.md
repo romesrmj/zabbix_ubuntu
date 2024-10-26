@@ -1,12 +1,9 @@
 # zabbix_ubuntu
-instalação automatica do zabbix 6.04 + Grafana
+instalação automatica do zabbix 7Lts + Grafana V 4.5.6
 
 # Baixe o pacote
 
-bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/automationzbx.sh)
-
-# Novo pacote de deploy
-bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zabbix_deploy.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx_ubt-2404.sh)
 
 #Permissão no arquivo
 chmod +x zabbix_auto.sh
