@@ -5,6 +5,7 @@ ZABBIX_VERSION="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-rel
 GRAFANA_VERSION="4.5.6"
 TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
+ZABBIX_SQL_FILE="/tmp/create.sql.gz"
 
 # Função para criar senha aleatória
 generate_password() {
@@ -59,59 +60,6 @@ mysql -uroot -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY 
 mysql -uroot -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
 mysql -uroot -e "FLUSH PRIVILEGES;" || { echo "Erro ao configurar privilégios do banco de dados"; exit 1; }
 
-# Definir caminho fixo do arquivo SQL para Zabbix
-ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
-
-# Importar o arquivo SQL para o MySQL
-if [ -f "$ZABBIX_SQL_FILE" ]; then
-    echo "Importing initial schema to Zabbix database..."
-    zcat "$ZABBIX_SQL_FILE" | mysql -u$DB_USER -p$DB_PASSWORD $DB_NAME || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
-else
-    echo "Arquivo SQL para Zabbix não encontrado no caminho especificado ($ZABBIX_SQL_FILE). Verifique o local e atualize o script."
-    exit 1
-fi
-
-# Atualizar configuração do Zabbix
-sed -i "s/^DBPassword=.*/DBPassword=$DB_PASSWORD/" /etc/zabbix/zabbix_server.conf
-
-# Configurar PHP para Zabbix
-sed -i "s/^;date.timezone =.*/date.timezone = $TIMEZONE/" /etc/zabbix/apache.conf
-
-# Reiniciar serviços do Zabbix e verificar status
-echo "Restarting Zabbix services..."
-systemctl restart zabbix-server zabbix-agent apache2
-systemctl enable zabbix-server zabbix-agent apache2
-
-if systemctl is-active --quiet zabbix-server && systemctl is-active --quiet apache2; then
-    echo "Zabbix server e Apache foram iniciados com sucesso."
-else
-    echo "Erro ao iniciar os serviços Zabbix ou Apache."
-    exit 1
-fi
-
-# Instalar Grafana
-echo "Installing Grafana..."
-wget "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -O /tmp/grafana.deb || { echo "Erro ao baixar o pacote Grafana"; exit 1; }
-dpkg -i /tmp/grafana.deb
-apt install -f -y || { echo "Erro ao instalar Grafana"; exit 1; }
-
-# Configurar Grafana para iniciar com o sistema
-echo "Starting Grafana..."
-systemctl daemon-reload
-systemctl start grafana-server
-systemctl enable grafana-server
-
-if systemctl is-active --quiet grafana-server; then
-    echo "Grafana foi iniciado com sucesso."
-else
-    echo "Erro ao iniciar o Grafana."
-    exit 1
-fi
-
-# Finalização
-echo "Installation complete."
-echo "Zabbix database name: $DB_NAME"
-echo "Zabbix database user: $DB_USER"
-echo "Zabbix database password: $DB_PASSWORD"
-echo "Grafana version $GRAFANA_VERSION installed and running."
-echo "Zabbix and Grafana should be accessible shortly."
+# Tentar baixar o arquivo SQL diretamente do CDN do Zabbix
+if ! wget "$ZABBIX_SQL_FILE" -O "$ZABBIX_SQL_FILE"; then
+    echo "Erro ao baixar o arqui
