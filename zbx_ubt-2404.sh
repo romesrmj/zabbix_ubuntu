@@ -20,9 +20,10 @@ check_install() {
 
 # Função para verificar se o banco de dados e o usuário existem
 check_db_user() {
-    local db_exists=$(mysql -uroot -p -e "SHOW DATABASES LIKE '$DB_NAME';" | grep "$DB_NAME" | wc -l)
-    local user_exists=$(mysql -uroot -p -e "SELECT User FROM mysql.user WHERE User = '$DB_USER';" | grep "$DB_USER" | wc -l)
+    local db_exists=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" | grep "$DB_NAME" | wc -l)
+    local user_exists=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT User FROM mysql.user WHERE User = '$DB_USER';" | grep "$DB_USER" | wc -l)
 
+    echo "Verificando banco de dados e usuário..."
     if [ "$db_exists" -eq 1 ]; then
         echo "O banco de dados '$DB_NAME' já existe."
     else
@@ -36,19 +37,11 @@ check_db_user() {
     fi
 }
 
-# Função para remover pacotes existentes do Zabbix
-remove_zabbix() {
-    echo "Verificando se há entidades do Zabbix instaladas..."
-    local packages=("zabbix-server-mysql" "zabbix-frontend-php" "zabbix-apache-conf" "zabbix-agent")
-    for pkg in "${packages[@]}"; do
-        if dpkg -l | grep -q "$pkg"; then
-            echo "Removendo $pkg..."
-            apt-get remove --purge -y "$pkg" || { echo "Erro ao remover $pkg"; exit 1; }
-        else
-            echo "$pkg não está instalado."
-        fi
-    done
-    apt-get autoremove -y
+# Função para remover banco de dados e usuário
+remove_db_user() {
+    echo "Removendo banco de dados e usuário, se existirem..."
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS $DB_NAME;"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER IF EXISTS '$DB_USER'@'localhost';"
 }
 
 # Função para configurar o MySQL
@@ -63,14 +56,14 @@ setup_mysql() {
     check_db_user
 
     # Remover banco de dados e usuário existentes, se existirem
-    mysql -uroot -p -e "DROP DATABASE IF EXISTS $DB_NAME;"
-    mysql -uroot -p -e "DROP USER IF EXISTS '$DB_USER'@'localhost';"
+    remove_db_user
 
     # Criando o banco de dados e usuário
-    mysql -uroot -p -e "CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;"
-    mysql -uroot -p -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
-    mysql -uroot -p -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
-    mysql -uroot -p -e "FLUSH PRIVILEGES;"
+    echo "Criando banco de dados e usuário para Zabbix..."
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;"
 }
 
 # Verifica se o script está sendo executado como root
@@ -78,6 +71,10 @@ if [[ "$EUID" -ne 0 ]]; then
     echo "Por favor, execute este script como root."
     exit 1
 fi
+
+# Solicitar a senha do root do MySQL
+read -s -p "Digite a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
+echo
 
 # Remover entidades do Zabbix se já instaladas
 remove_zabbix
