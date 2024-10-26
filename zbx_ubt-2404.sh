@@ -18,6 +18,21 @@ check_install() {
     fi
 }
 
+# Função para remover pacotes existentes do Zabbix
+remove_zabbix() {
+    echo "Verificando se há entidades do Zabbix instaladas..."
+    local packages=("zabbix-server-mysql" "zabbix-frontend-php" "zabbix-apache-conf" "zabbix-agent")
+    for pkg in "${packages[@]}"; do
+        if dpkg -l | grep -q "$pkg"; then
+            echo "Removendo $pkg..."
+            apt-get remove --purge -y "$pkg" || { echo "Erro ao remover $pkg"; exit 1; }
+        else
+            echo "$pkg não está instalado."
+        fi
+    done
+    apt-get autoremove -y
+}
+
 # Função para configurar o MySQL
 setup_mysql() {
     # Instalando MySQL Server
@@ -38,6 +53,9 @@ if [[ "$EUID" -ne 0 ]]; then
     echo "Por favor, execute este script como root."
     exit 1
 fi
+
+# Remover entidades do Zabbix se já instaladas
+remove_zabbix
 
 # Configurar timezone
 echo "Configurando timezone..."
