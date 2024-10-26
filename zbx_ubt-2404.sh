@@ -45,12 +45,12 @@ SET GLOBAL log_bin_trust_function_creators = 1;
 FLUSH PRIVILEGES;
 EOF
 
-# Importar o esquema inicial do Zabbix com a senha fornecida de maneira mais segura
+# Importar o esquema inicial do Zabbix usando o usuário root
 SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
 
 if [[ -f "$SQL_FILE" ]]; then
-    echo "Importing Zabbix schema..."
-    zcat "$SQL_FILE" | mysql --default-character-set=utf8mb4 -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do Zabbix"; exit 1; }
+    echo "Importing Zabbix schema as root..."
+    zcat "$SQL_FILE" | mysql --default-character-set=utf8mb4 -uroot "$DB_NAME" || { echo "Erro ao importar o esquema do Zabbix"; exit 1; }
 else
     echo "Arquivo SQL não encontrado em $SQL_FILE. Verifique a instalação do Zabbix."
     exit 1
