@@ -5,7 +5,6 @@ ZABBIX_VERSION="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-rel
 GRAFANA_VERSION="4.5.6"
 TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
-ZABBIX_SQL_FILE="/tmp/create.sql.gz"
 
 # Função para criar senha aleatória
 generate_password() {
@@ -59,7 +58,6 @@ fi
 # Configuração do MySQL com verificação de existência do banco e usuário
 echo "Configuring MySQL..."
 mysql -uroot <<EOF
--- Remover o banco de dados se já existir, para evitar erro de duplicação
 DROP DATABASE IF EXISTS $DB_NAME;
 CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;
 CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
@@ -67,18 +65,14 @@ GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-# Tentar baixar o arquivo SQL diretamente do CDN do Zabbix
-if ! wget "https://cdn.zabbix.com/zabbix/schemas/create.sql.gz" -O "$ZABBIX_SQL_FILE"; then
-    echo "Erro ao baixar o arquivo SQL do Zabbix. Verifique sua conexão com a internet."
-    exit 1
-fi
+# Localizar o arquivo SQL para o Zabbix
+ZABBIX_SQL_FILE=$(find /usr/share/doc/zabbix-server-mysql/ -name "create.sql.gz" | head -n 1)
 
-# Importar o arquivo SQL para o MySQL
-if [ -f "$ZABBIX_SQL_FILE" ]; then
+if [[ -f "$ZABBIX_SQL_FILE" ]]; then
     echo "Importing initial schema to Zabbix database..."
     zcat "$ZABBIX_SQL_FILE" | mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
 else
-    echo "Arquivo SQL para Zabbix não encontrado. Verifique o local manualmente e atualize o caminho no script."
+    echo "Arquivo SQL para Zabbix não encontrado em /usr/share/doc/zabbix-server-mysql/. Verifique a instalação do Zabbix."
     exit 1
 fi
 
