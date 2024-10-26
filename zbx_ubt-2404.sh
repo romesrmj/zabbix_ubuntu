@@ -59,20 +59,15 @@ mysql -uroot -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY 
 mysql -uroot -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
 mysql -uroot -e "FLUSH PRIVILEGES;" || { echo "Erro ao configurar privilégios do banco de dados"; exit 1; }
 
-# Procurar e importar o arquivo SQL do Zabbix para o MySQL
-ZABBIX_SQL_FILE=""
-for path in /usr/share/doc/zabbix-server-mysql*/create.sql.gz /usr/share/doc/zabbix-server-mysql/create.sql.gz; do
-    if [ -f "$path" ]; then
-        ZABBIX_SQL_FILE="$path"
-        break
-    fi
-done
+# Definir caminho fixo do arquivo SQL para Zabbix
+ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
 
-if [ -n "$ZABBIX_SQL_FILE" ]; then
+# Importar o arquivo SQL para o MySQL
+if [ -f "$ZABBIX_SQL_FILE" ]; then
     echo "Importing initial schema to Zabbix database..."
     zcat "$ZABBIX_SQL_FILE" | mysql -u$DB_USER -p$DB_PASSWORD $DB_NAME || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
 else
-    echo "Arquivo SQL para Zabbix não encontrado. Verifique o local manualmente e atualize o caminho no script."
+    echo "Arquivo SQL para Zabbix não encontrado no caminho especificado ($ZABBIX_SQL_FILE). Verifique o local e atualize o script."
     exit 1
 fi
 
