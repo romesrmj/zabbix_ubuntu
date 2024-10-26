@@ -6,7 +6,7 @@ TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
 DB_NAME="zabbix_db"
 DB_USER="zabbix_user"
-GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"
+GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"  # Exemplo de URL do Grafana
 
 # Função para remover o Zabbix e Grafana, se existir
 remove_existing() {
@@ -22,11 +22,6 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
 fi
 
-# Atualizar sistema e pacotes
-echo "Atualizando o sistema e instalando pré-requisitos..."
-apt update -y || { echo "Erro ao atualizar a lista de pacotes"; exit 1; }
-apt upgrade -y || { echo "Erro ao atualizar os pacotes"; exit 1; }
-
 # Remover instalação anterior do Zabbix e Grafana, se houver
 remove_existing
 
@@ -40,7 +35,8 @@ locale-gen $LOCALE
 update-locale LANG=$LOCALE || { echo "Erro ao configurar o locale"; exit 1; }
 
 # Instalar pacotes necessários
-echo "Instalando pacotes necessários..."
+echo "Atualizando sistema e instalando pré-requisitos..."
+apt update -y
 apt install -y wget gnupg2 software-properties-common mysql-server || { echo "Erro ao instalar pacotes necessários"; exit 1; }
 
 # Solicitar a senha do root do MySQL
