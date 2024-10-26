@@ -38,7 +38,8 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 # Configurar banco de dados para Zabbix
 echo "Configuring MySQL database for Zabbix..."
 mysql -uroot <<EOF
-CREATE DATABASE IF NOT EXISTS $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+DROP DATABASE IF EXISTS $DB_NAME;  -- Remove o banco de dados existente
+CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
 GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
 SET GLOBAL log_bin_trust_function_creators = 1;
