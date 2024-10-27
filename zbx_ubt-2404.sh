@@ -36,6 +36,9 @@ echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
 apt install -y wget gnupg2 software-properties-common mysql-server || { echo "Erro ao instalar pacotes necessários"; exit 1; }
 
+# Limpar a tela antes de solicitar as senhas
+clear
+
 # Solicitar senha do root do MySQL e do usuário do Zabbix
 read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
 echo
@@ -70,30 +73,33 @@ dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; ex
 apt update -y
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
 
-# Criar diretório temporário para o arquivo SQL
-TEMP_DIR=$(mktemp -d)
-ZABBIX_SQL_FILE="$TEMP_DIR/create.sql.gz"
+# Verificação do arquivo SQL
+echo "Verificando o arquivo SQL do Zabbix..."
+SQL_PATHS=(
+    "/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
+    "/usr/share/doc/zabbix-server-mysql/create.sql.gz"
+)
+ZABBIX_SQL_FILE=""
 
-# Verificação do arquivo SQL no diretório temporário
-echo "Copiando o arquivo SQL para diretório temporário..."
-if ! cp /usr/share/zabbix-sql-scripts/mysql/server.sql.gz "$ZABBIX_SQL_FILE" 2>/dev/null; then
-    echo "Arquivo SQL não encontrado no caminho padrão. Verificando outras localizações..."
-    ZABBIX_SQL_FILE=$(find /usr/share -type f -name "create.sql.gz" | grep "zabbix" | head -n 1)
-    
-    if [[ -z "$ZABBIX_SQL_FILE" ]]; then
-        echo "Arquivo SQL para Zabbix não encontrado em nenhuma das localizações padrão. Verifique a instalação do Zabbix."
-        exit 1
+# Procurar pelo arquivo SQL
+for path in "${SQL_PATHS[@]}"; do
+    if [[ -f "$path" ]]; then
+        ZABBIX_SQL_FILE="$path"
+        break
     fi
+done
+
+# Verificar se o arquivo foi encontrado
+if [[ -z "$ZABBIX_SQL_FILE" ]]; then
+    echo "Arquivo SQL para Zabbix não encontrado em nenhuma das localizações padrão. Verifique a instalação do Zabbix."
+    exit 1
 else
-    echo "Arquivo SQL encontrado e copiado para: $TEMP_DIR"
+    echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
 fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
 zcat "$ZABBIX_SQL_FILE" | mysql --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
-
-# Limpar diretório temporário
-rm -rf "$TEMP_DIR"
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
