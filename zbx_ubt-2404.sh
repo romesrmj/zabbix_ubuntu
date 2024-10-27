@@ -82,14 +82,14 @@ apt update -y
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || handle_error "Erro ao instalar Zabbix."
 
 # Verificação do arquivo SQL
-echo "Verificando o arquivo SQL do Zabbix..."
+echo "Procurando o arquivo SQL do Zabbix..."
 SQL_PATHS=(
     "/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
     "/usr/share/doc/zabbix-server-mysql/create.sql.gz"
 )
-ZABBIX_SQL_FILE=""
 
-# Procurar pelo arquivo SQL
+# Procurar pelo arquivo SQL, caso não encontre, procurar no sistema
+ZABBIX_SQL_FILE=""
 for path in "${SQL_PATHS[@]}"; do
     if [[ -f "$path" ]]; then
         ZABBIX_SQL_FILE="$path"
@@ -97,11 +97,15 @@ for path in "${SQL_PATHS[@]}"; do
     fi
 done
 
-# Verificar se o arquivo foi encontrado
+# Buscar pelo arquivo caso não encontrado nas localizações padrão
 if [[ -z "$ZABBIX_SQL_FILE" ]]; then
-    handle_error "Arquivo SQL para Zabbix não encontrado. Verifique a instalação do Zabbix."
-else
-    echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
+    echo "Arquivo SQL não encontrado em locais padrão. Buscando em todo o sistema, aguarde..."
+    ZABBIX_SQL_FILE=$(find / -type f -name "server.sql.gz" -o -name "create.sql.gz" 2>/dev/null | head -n 1)
+    if [[ -z "$ZABBIX_SQL_FILE" ]]; then
+        handle_error "Arquivo SQL para Zabbix não encontrado. Verifique a instalação do Zabbix."
+    else
+        echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
+    fi
 fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
