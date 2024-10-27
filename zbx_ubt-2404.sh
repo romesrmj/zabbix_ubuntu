@@ -42,14 +42,11 @@ echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
 apt install -y wget gnupg2 software-properties-common mysql-server || handle_error "Erro ao instalar pacotes necessários."
 
-# Limpar a tela antes de solicitar as senhas
+# Limpar a tela antes de solicitar a senha
 clear
 
-# Solicitar senha do root do MySQL e do usuário do Zabbix
+# Solicitar senha do root do MySQL
 read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
-echo
-clear
-read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
 echo
 clear
 
@@ -63,7 +60,7 @@ echo "password=$MYSQL_ROOT_PASSWORD" >> "$MYSQL_CNF"
 echo "Criando banco de dados e usuário do Zabbix..."
 {
     mysql --defaults-file="$MYSQL_CNF" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;" &&
-    mysql --defaults-file="$MYSQL_CNF" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" &&
+    mysql --defaults-file="$MYSQL_CNF" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY 'password';" &&
     mysql --defaults-file="$MYSQL_CNF" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" &&
     mysql --defaults-file="$MYSQL_CNF" -e "FLUSH PRIVILEGES;"
 } || handle_error "Erro ao criar o banco de dados e usuário do Zabbix."
@@ -87,12 +84,12 @@ fi
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
 {
-    zcat "$ZABBIX_SQL_FILE" | mysql --defaults-file="$MYSQL_CNF" --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME"
+    zcat "$ZABBIX_SQL_FILE" | mysql --defaults-file="$MYSQL_CNF" --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME"
 } || handle_error "Erro ao importar o esquema do banco de dados Zabbix."
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
-sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf
+sed -i "s/^DBPassword=.*/DBPassword='password'/" /etc/zabbix/zabbix_server.conf
 
 # Reiniciar serviços do Zabbix
 echo "Reiniciando serviços do Zabbix..."
@@ -113,9 +110,6 @@ systemctl enable --now grafana-server || handle_error "Erro ao habilitar o Grafa
 rm -f "$MYSQL_CNF"
 
 # Finalização
-clear
-echo "############################################################"
 echo "Instalação do Zabbix e Grafana concluída com sucesso."
 echo "Acesse o Zabbix na URL: http://<IP_DO_SEU_SERVIDOR>/zabbix"
 echo "Acesse o Grafana na URL: http://<IP_DO_SEU_SERVIDOR>:3000"
-echo "############################################################"
