@@ -84,8 +84,12 @@ echo "Redefinindo senha do usuário Zabbix..."
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD'; FLUSH PRIVILEGES;" || { echo "Erro ao redefinir senha do usuário Zabbix"; exit 1; }
 
 # Mensagem final com informações de acesso
+clear
+echo "$########################################################################$"
 SERVER_IP=$(hostname -I | awk '{print $1}')
+echo "$########################################################################$"
 echo "Instalação do Zabbix e Grafana concluída com sucesso."
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
 echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
+echo "$########################################################################$"
