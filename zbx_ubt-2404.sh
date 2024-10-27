@@ -95,6 +95,10 @@ systemctl enable --now grafana-server
 echo "Redefinindo senha do usuário Zabbix..."
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD'; FLUSH PRIVILEGES;" || { echo "Erro ao redefinir senha do usuário Zabbix"; exit 1; }
 
+# Reiniciar serviços do MySQL
+echo "Reiniciando serviços do MySQL..."
+systemctl restart mysql
+
 # Reiniciar Zabbix
 systemctl restart zabbix-server zabbix-agent apache2
 systemctl enable zabbix-server zabbix-agent apache2
