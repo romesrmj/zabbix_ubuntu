@@ -53,26 +53,31 @@ read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
 echo
 clear
 
+# Criar um arquivo de configuração temporário para o MySQL
+MYSQL_CNF=$(mktemp)
+echo "[client]" > "$MYSQL_CNF"
+echo "user=root" >> "$MYSQL_CNF"
+echo "password=$MYSQL_ROOT_PASSWORD" >> "$MYSQL_CNF"
+
 # Verificar se o banco de dados e o usuário já existem e remover se necessário
-DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null)
+DB_EXIST=$(mysql --defaults-file="$MYSQL_CNF" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null)
 if [[ -n "$DB_EXIST" ]]; then
     echo "O banco de dados '$DB_NAME' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || handle_error "Erro ao remover o banco de dados."
+    mysql --defaults-file="$MYSQL_CNF" -e "DROP DATABASE $DB_NAME;" || handle_error "Erro ao remover o banco de dados."
 fi
 
-USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
+USER_EXIST=$(mysql --defaults-file="$MYSQL_CNF" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
 if [[ "$USER_EXIST" == *"1"* ]]; then
     echo "O usuário '$DB_USER' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;"
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER IF EXISTS '$DB_USER'@'localhost';" || handle_error "Erro ao remover o usuário."
+    mysql --defaults-file="$MYSQL_CNF" -e "DROP USER IF EXISTS '$DB_USER'@'localhost';" || handle_error "Erro ao remover o usuário."
 fi
 
 # Criar banco de dados e usuário do Zabbix
 echo "Criando banco de dados e usuário do Zabbix..."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || handle_error "Erro ao criar o banco de dados."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || handle_error "Erro ao criar o usuário."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || handle_error "Erro ao conceder privilégios."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || handle_error "Erro ao atualizar privilégios."
+mysql --defaults-file="$MYSQL_CNF" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || handle_error "Erro ao criar o banco de dados."
+mysql --defaults-file="$MYSQL_CNF" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || handle_error "Erro ao criar o usuário."
+mysql --defaults-file="$MYSQL_CNF" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || handle_error "Erro ao conceder privilégios."
+mysql --defaults-file="$MYSQL_CNF" -e "FLUSH PRIVILEGES;" || handle_error "Erro ao atualizar privilégios."
 
 # Instalar Zabbix
 echo "Instalando Zabbix..."
@@ -91,7 +96,7 @@ fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
-zcat "$ZABBIX_SQL_FILE" | mysql --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || handle_error "Erro ao importar o esquema do banco de dados Zabbix."
+zcat "$ZABBIX_SQL_FILE" | mysql --defaults-file="$MYSQL_CNF" --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || handle_error "Erro ao importar o esquema do banco de dados Zabbix."
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
@@ -111,6 +116,9 @@ apt-get install -f -y || handle_error "Erro ao corrigir dependências do Grafana
 # Reiniciar e habilitar o serviço do Grafana
 echo "Reiniciando serviços do Grafana..."
 systemctl enable --now grafana-server || handle_error "Erro ao habilitar o Grafana."
+
+# Remover o arquivo de configuração temporário
+rm -f "$MYSQL_CNF"
 
 # Finalização
 clear
