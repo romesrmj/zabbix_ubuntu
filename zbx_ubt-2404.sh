@@ -6,9 +6,8 @@ TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
 DB_NAME="zabbix_db"
 DB_USER="zabbix_user"
-ZABBIX_USER_PASSWORD=""
-GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"  # Exemplo de URL do Grafana
-SERVER_IP=$(hostname -I | awk '{print $1}')  # Captura o IP do servidor
+ZABBIX_USER_PASSWORD="your_zabbix_password"  # Substitua pela sua senha desejada
+GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"
 
 # Função para remover o Zabbix e Grafana, se existir
 remove_existing() {
@@ -27,16 +26,8 @@ fi
 # Remover instalação anterior do Zabbix e Grafana, se houver
 remove_existing
 
-# Limpar tela antes de definir senhas
+# Limpar a tela
 clear
-
-# Solicitar a senha do root do MySQL
-read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
-echo
-
-# Solicitar a senha para o usuário do Zabbix
-read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
-echo
 
 # Configurar timezone
 echo "Configurando timezone..."
@@ -51,6 +42,14 @@ update-locale LANG=$LOCALE || { echo "Erro ao configurar o locale"; exit 1; }
 echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
 apt install -y wget gnupg2 software-properties-common mysql-server || { echo "Erro ao instalar pacotes necessários"; exit 1; }
+
+# Solicitar a senha do root do MySQL
+read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
+echo
+
+# Solicitar a senha para o usuário do Zabbix
+read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
+echo
 
 # Verificar se o banco de dados existe e remover se necessário
 DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null)
@@ -68,7 +67,7 @@ fi
 
 # Criar banco de dados e usuário do Zabbix
 echo "Criando banco de dados e usuário do Zabbix..."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || { echo "Erro ao criar o banco de dados"; exit 1; }
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;" || { echo "Erro ao criar o banco de dados"; exit 1; }
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || { echo "Erro ao criar o usuário"; exit 1; }
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || { echo "Erro ao conceder privilégios"; exit 1; }
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || { echo "Erro ao atualizar privilégios"; exit 1; }
@@ -82,7 +81,15 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 
 # Importar esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
-zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -uzabbix -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
+if [ -f /usr/share/zabbix-sql-scripts/mysql/server.sql.gz ]; then
+    if ! zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -uzabbix -p"$ZABBIX_USER_PASSWORD" "$DB_NAME"; then
+        echo "Erro ao importar o esquema do banco de dados Zabbix. Verifique se o arquivo SQL está correto e acessível."
+        exit 1
+    fi
+else
+    echo "Arquivo SQL não encontrado em /usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
+    exit 1
+fi
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
@@ -99,9 +106,9 @@ wget "$GRAFANA_VERSION" -O /tmp/grafana.deb || { echo "Erro ao baixar o pacote G
 dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar o pacote Grafana"; exit 1; }
 apt-get install -f -y || { echo "Erro ao corrigir dependências do Grafana"; exit 1; }
 
-# Instalar plugin do Zabbix para Grafana
-echo "Instalando plugin do Zabbix para Grafana..."
-grafana-cli plugins install alexanderzobnin-zabbix-app || { echo "Erro ao instalar o plugin do Zabbix"; exit 1; }
+# Instalar o plugin Zabbix para Grafana
+echo "Instalando o plugin Zabbix para Grafana..."
+grafana-cli plugins install alexanderzobnin-zabbix-app || { echo "Erro ao instalar o plugin Zabbix para Grafana"; exit 1; }
 
 # Reiniciar e habilitar o serviço do Grafana
 echo "Reiniciando serviços do Grafana..."
@@ -109,6 +116,6 @@ systemctl enable --now grafana-server || { echo "Erro ao habilitar o Grafana"; e
 
 # Finalização
 echo "Instalação do Zabbix e Grafana concluída com sucesso."
-echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
-echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-echo "Senha do usuário Zabbix para autenticação no banco: $ZABBIX_USER_PASSWORD"
+echo "Acesse o Zabbix na URL: http://$(hostname -I | awk '{print $1}')/zabbix"
+echo "Acesse o Grafana na URL: http://$(hostname -I | awk '{print $1}'):3000"
+echo "A senha do usuário Zabbix para autenticação no banco é: $ZABBIX_USER_PASSWORD"
