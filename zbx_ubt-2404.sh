@@ -93,16 +93,6 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
 zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || { echo "Erro ao importar esquema inicial"; exit 1; }
 
-# Atualizar configuração do Zabbix
-echo "Atualizando configuração do Zabbix..."
-if [ -f /etc/zabbix/zabbix_server.conf ]; then
-    # Usar sed para atualizar a linha DBPassword, permitindo espaços antes e depois do sinal de igual
-    sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
-else
-    echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
-    exit 1
-fi
-
 # Instalar Grafana e plugin Zabbix
 echo "Instalando Grafana e plugin do Zabbix..."
 wget "$GRAFANA_VERSION" -O /tmp/grafana.deb
@@ -122,6 +112,16 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO 
 # Reiniciar serviços do MySQL
 echo "Reiniciando serviços do MySQL..."
 systemctl restart mysql || { echo "Erro ao reiniciar o MySQL"; exit 1; }
+
+# Atualizar configuração do Zabbix
+echo "Atualizando configuração do Zabbix..."
+if [ -f /etc/zabbix/zabbix_server.conf ]; then
+    # Usar sed para atualizar a linha DBPassword, permitindo espaços antes e depois do sinal de igual
+    sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+else
+    echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
+    exit 1
+fi
 
 # Reiniciar Zabbix
 echo "Reiniciando serviços do Zabbix..."
