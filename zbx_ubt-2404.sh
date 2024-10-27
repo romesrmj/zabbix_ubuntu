@@ -81,8 +81,12 @@ zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
-echo "Senha do Zabbix: $ZABBIX_USER_PASSWORD"  # Para verificar se a variável está definida
-sed -i 's/^DBPassword=.*/DBPassword='"$ZABBIX_USER_PASSWORD"'/' /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+if [ -f /etc/zabbix/zabbix_server.conf ]; then
+    sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+else
+    echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
+    exit 1
+fi
 
 # Instalar Grafana e plugin Zabbix
 echo "Instalando Grafana e plugin do Zabbix..."
