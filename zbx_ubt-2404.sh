@@ -58,7 +58,8 @@ fi
 USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
 if [[ "$USER_EXIST" == *"1"* ]]; then
     echo "O usuário '$DB_USER' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || { echo "Erro ao remover o usuário"; exit 1; }
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;"  # Atualizar privilégios antes de remover
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER IF EXISTS '$DB_USER'@'localhost';" || { echo "Erro ao remover o usuário"; exit 1; }
 fi
 
 # Criar banco de dados e usuário do Zabbix
