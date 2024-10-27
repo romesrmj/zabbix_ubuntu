@@ -1,11 +1,13 @@
 #!/bin/bash
 
+set -e  # Para parar o script na primeira ocorrência de erro
+
 # Função para remover Zabbix e Grafana, se existente
 remove_existing() {
     echo "Removendo Zabbix e Grafana existentes..."
-    systemctl stop zabbix-server zabbix-agent apache2 grafana-server
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano
-    apt-get autoremove -y
+    systemctl stop zabbix-server zabbix-agent apache2 grafana-server || true
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano || true
+    apt-get autoremove -y || true
 }
 
 # Solicitar o nome do banco de dados e do usuário
@@ -63,13 +65,13 @@ apt install -y wget gnupg2 software-properties-common mysql-server nano
 
 # Verificar e excluir banco e usuário existentes, se necessário
 echo "Verificando se o banco e o usuário já existem..."
-DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null)
+DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null || true)
 if [[ -n "$DB_EXIST" ]]; then
     echo "O banco de dados '$DB_NAME' já existe. Removendo..."
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || { echo "Erro ao remover o banco de dados"; exit 1; }
 fi
 
-USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
+USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null || true)
 if [[ "$USER_EXIST" == *"1"* ]]; then
     echo "O usuário '$DB_USER' já existe. Removendo..."
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || { echo "Erro ao remover o usuário"; exit 1; }
@@ -93,13 +95,52 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
 zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || { echo "Erro ao importar esquema inicial"; exit 1; }
 
+# Atualizar configuração do Zabbix
+echo "Atualizando configuração do Zabbix..."
+if [ -f /etc/zabbix/zabbix_server.conf ]; then
+    sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+else
+    echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
+    exit 1
+fi
+
+# Reiniciar serviços do MySQL
+echo "Reiniciando serviços do MySQL..."
+systemctl restart mysql || { echo "Erro ao reiniciar o MySQL"; exit 1; }
+
+# Reiniciar Zabbix
+echo "Reiniciando serviços do Zabbix..."
+systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar serviços do Zabbix"; exit 1; }
+systemctl enable zabbix-server zabbix-agent apache2
+
 # Instalar Grafana e plugin Zabbix
 echo "Instalando Grafana e plugin do Zabbix..."
 wget "$GRAFANA_VERSION" -O /tmp/grafana.deb
 dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar o pacote do Grafana"; exit 1; }
 apt-get install -f -y || { echo "Erro ao corrigir dependências"; exit 1; }
 grafana-cli plugins install alexanderzobnin-zabbix-app || { echo "Erro ao instalar o plugin Zabbix no Grafana"; exit 1; }
-systemctl enable --now grafana-server
+
+# Configurar o datasource do Zabbix no Grafana
+echo "Configurando o datasource do Zabbix no Grafana..."
+curl -X POST -H "Content-Type: application/json" -d '{
+  "name": "Zabbix",
+  "type": "alexanderzobnin-zabbix-datasource",
+  "access": "proxy",
+  "url": "http://localhost/zabbix",
+  "basicAuth": false,
+  "jsonData": {
+    "zabbixApiUrl": "http://localhost/zabbix/api_jsonrpc.php",
+    "zabbixApiLogin": "'"$DB_USER"'",
+    "zabbixApiPassword": "'"$ZABBIX_USER_PASSWORD"'"
+  }
+}' http://admin:admin@localhost:3000/api/datasources
+
+# Verificar se a configuração foi bem-sucedida
+if [ $? -eq 0 ]; then
+    echo "Datasource do Zabbix configurado com sucesso no Grafana."
+else
+    echo "Erro ao configurar o datasource do Zabbix no Grafana."
+fi
 
 # Redefinir senha do usuário do Zabbix após instalação
 echo "Redefinindo senha do usuário Zabbix..."
@@ -109,32 +150,13 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDEN
 echo "Concedendo permissões ao usuário Zabbix..."
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || { echo "Erro ao conceder permissões ao usuário Zabbix"; exit 1; }
 
-# Reiniciar serviços do MySQL
-echo "Reiniciando serviços do MySQL..."
-systemctl restart mysql || { echo "Erro ao reiniciar o MySQL"; exit 1; }
-
-# Atualizar configuração do Zabbix
-echo "Atualizando configuração do Zabbix..."
-if [ -f /etc/zabbix/zabbix_server.conf ]; then
-    # Usar sed para atualizar a linha DBPassword, permitindo espaços antes e depois do sinal de igual
-    sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
-else
-    echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
-    exit 1
-fi
-
-# Reiniciar Zabbix
-echo "Reiniciando serviços do Zabbix..."
-systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar serviços do Zabbix"; exit 1; }
-systemctl enable zabbix-server zabbix-agent apache2
-
 # Mensagem final com informações de acesso
 clear
 echo "$########################################################################$"
 SERVER_IP=$(hostname -I | awk '{print $1}')
-echo "$########################################################################$"
-echo "Instalação do Zabbix e Grafana concluída com sucesso."
-echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
-echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
+echo "A instalação foi concluída com sucesso!"
+echo "Acesse o Zabbix em: http://$SERVER_IP/zabbix"
+echo "Acesse o Grafana em: http://$SERVER_IP:3000"
+echo "Usuário padrão do Grafana: admin"
+echo "Senha padrão do Grafana: admin"
 echo "$########################################################################$"
