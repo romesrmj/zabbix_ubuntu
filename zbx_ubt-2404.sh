@@ -21,6 +21,20 @@ echo
 read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
 echo
 
+# Armazenar informações de configuração
+CONFIG=(
+    "DB_NAME=$DB_NAME"
+    "DB_USER=$DB_USER"
+    "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD"
+    "ZABBIX_USER_PASSWORD=$ZABBIX_USER_PASSWORD"
+)
+
+# Exibir as informações armazenadas
+echo "Informações armazenadas:"
+for item in "${CONFIG[@]}"; do
+    echo "$item"
+done
+
 # Variáveis de versão e configuração
 ZABBIX_VERSION="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb"
 TIMEZONE="America/Sao_Paulo"
@@ -109,6 +123,7 @@ echo "Reiniciando serviços do MySQL..."
 systemctl restart mysql || { echo "Erro ao reiniciar o MySQL"; exit 1; }
 
 # Reiniciar Zabbix
+echo "Reiniciando serviços do Zabbix..."
 systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar serviços do Zabbix"; exit 1; }
 systemctl enable zabbix-server zabbix-agent apache2
 
