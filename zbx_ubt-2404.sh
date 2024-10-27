@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Função para remover Zabbix e Grafana, se existente
+# Função para remover Zabbix e Grafana, se existentes
 remove_existing() {
     echo "Removendo Zabbix e Grafana existentes..."
     systemctl stop zabbix-server zabbix-agent apache2 grafana-server
@@ -90,14 +90,6 @@ dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar o pacote do Grafana"; exit 
 apt-get install -f -y || { echo "Erro ao corrigir dependências"; exit 1; }
 grafana-cli plugins install alexanderzobnin-zabbix-app || { echo "Erro ao instalar o plugin Zabbix no Grafana"; exit 1; }
 systemctl enable --now grafana-server
-
-# Redefinir senha do usuário do Zabbix após instalação
-echo "Redefinindo senha do usuário Zabbix..."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || { echo "Erro ao redefinir senha do usuário Zabbix"; exit 1; }
-
-# Conceder permissões novamente ao usuário Zabbix
-echo "Concedendo permissões ao usuário Zabbix..."
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || { echo "Erro ao conceder permissões ao usuário Zabbix"; exit 1; }
 
 # Reiniciar serviços do MySQL
 echo "Reiniciando serviços do MySQL..."
