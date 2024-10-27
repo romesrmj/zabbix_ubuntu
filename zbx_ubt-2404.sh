@@ -79,33 +79,12 @@ echo "Instalando Zabbix..."
 wget "$ZABBIX_VERSION" -O /tmp/zabbix-release.deb || handle_error "Erro ao baixar o pacote Zabbix."
 dpkg -i /tmp/zabbix-release.deb || handle_error "Erro ao instalar o pacote Zabbix."
 apt update -y
-apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || handle_error "Erro ao instalar Zabbix."
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts || handle_error "Erro ao instalar Zabbix."
 
-# Verificação do arquivo SQL
-echo "Procurando o arquivo SQL do Zabbix..."
-SQL_PATHS=(
-    "/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
-    "/usr/share/doc/zabbix-server-mysql/create.sql.gz"
-)
-
-# Procurar pelo arquivo SQL, caso não encontre, procurar no sistema
-ZABBIX_SQL_FILE=""
-for path in "${SQL_PATHS[@]}"; do
-    if [[ -f "$path" ]]; then
-        ZABBIX_SQL_FILE="$path"
-        break
-    fi
-done
-
-# Buscar pelo arquivo caso não encontrado nas localizações padrão
-if [[ -z "$ZABBIX_SQL_FILE" ]]; then
-    echo "Arquivo SQL não encontrado em locais padrão. Buscando em todo o sistema, aguarde..."
-    ZABBIX_SQL_FILE=$(find / -type f -name "server.sql.gz" -o -name "create.sql.gz" 2>/dev/null | head -n 1)
-    if [[ -z "$ZABBIX_SQL_FILE" ]]; then
-        handle_error "Arquivo SQL para Zabbix não encontrado. Verifique a instalação do Zabbix."
-    else
-        echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
-    fi
+# Verificar e localizar o arquivo SQL
+ZABBIX_SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
+if [[ ! -f "$ZABBIX_SQL_FILE" ]]; then
+    handle_error "Arquivo SQL para Zabbix não encontrado em '$ZABBIX_SQL_FILE'. Verifique a instalação do Zabbix."
 fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
@@ -132,6 +111,7 @@ echo "Reiniciando serviços do Grafana..."
 systemctl enable --now grafana-server || handle_error "Erro ao habilitar o Grafana."
 
 # Finalização
+clear
 echo "Instalação do Zabbix e Grafana concluída com sucesso."
 echo "Acesse o Zabbix na URL: http://<IP_DO_SEU_SERVIDOR>/zabbix"
 echo "Acesse o Grafana na URL: http://<IP_DO_SEU_SERVIDOR>:3000"
