@@ -83,10 +83,6 @@ zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_
 echo "Atualizando configuração do Zabbix..."
 sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf
 
-# Reiniciar Zabbix
-systemctl restart zabbix-server zabbix-agent apache2
-systemctl enable zabbix-server zabbix-agent apache2
-
 # Instalar Grafana e plugin Zabbix
 echo "Instalando Grafana e plugin do Zabbix..."
 wget "$GRAFANA_VERSION" -O /tmp/grafana.deb
@@ -98,6 +94,10 @@ systemctl enable --now grafana-server
 # Redefinir senha do usuário do Zabbix após instalação
 echo "Redefinindo senha do usuário Zabbix..."
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD'; FLUSH PRIVILEGES;" || { echo "Erro ao redefinir senha do usuário Zabbix"; exit 1; }
+
+# Reiniciar Zabbix
+systemctl restart zabbix-server zabbix-agent apache2
+systemctl enable zabbix-server zabbix-agent apache2
 
 # Mensagem final com informações de acesso
 clear
