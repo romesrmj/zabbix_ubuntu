@@ -9,7 +9,7 @@ remove_existing() {
     apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano || true
     apt-get autoremove -y || true
 }
-
+clear
 # Verificar e instalar o toilet
 if ! command -v toilet &> /dev/null; then
     echo "Instalando o toilet..."
@@ -24,7 +24,6 @@ read -p "Digite o nome do usuário do banco de dados (padrão: zabbix_user): " D
 DB_USER=${DB_USER:-zabbix_user}
 
 # Solicitar senhas
-clear
 read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
 echo
 read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
@@ -37,7 +36,7 @@ CONFIG=(
     "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD" 
     "ZABBIX_USER_PASSWORD=$ZABBIX_USER_PASSWORD" 
 )
-
+clear
 # Verificação de permissão de root
 if [[ "$EUID" -ne 0 ]]; then
     echo "Por favor, execute este script como root."
