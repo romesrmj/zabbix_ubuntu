@@ -76,17 +76,19 @@ dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; ex
 apt update -y
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
 
-# Verificar se o arquivo SQL existe
-ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
+# Verificar se o arquivo SQL existe com busca mais ampla
+ZABBIX_SQL_FILE=$(find /usr/share/doc -type f -name "create.sql.gz" | grep "zabbix-server-mysql")
 
 # Verificação do arquivo SQL
 if [ -f "$ZABBIX_SQL_FILE" ]; then
     echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
 else
-    echo "Arquivo SQL para Zabbix não encontrado em: $ZABBIX_SQL_FILE"
+    echo "Arquivo SQL para Zabbix não encontrado no caminho padrão."
     echo "Tentando localizar o arquivo SQL em outros diretórios..."
-    ZABBIX_SQL_FILE=$(find /usr/share/doc/ -name "create.sql.gz" 2>/dev/null | grep zabbix)
 
+    # Nova busca em outras pastas comuns
+    ZABBIX_SQL_FILE=$(find / -type f -name "create.sql.gz" 2>/dev/null | grep -m 1 "zabbix")
+    
     if [ -n "$ZABBIX_SQL_FILE" ]; then
         echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
     else
