@@ -84,7 +84,9 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 # Verificar e localizar o arquivo SQL
 ZABBIX_SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
 if [[ ! -f "$ZABBIX_SQL_FILE" ]]; then
-    handle_error "Arquivo SQL para Zabbix não encontrado em '$ZABBIX_SQL_FILE'. Verifique a instalação do Zabbix."
+    echo "Arquivo SQL não encontrado em '$ZABBIX_SQL_FILE'. Verificando outros arquivos no diretório..."
+    ls /usr/share/zabbix-sql-scripts/mysql/
+    handle_error "Arquivo SQL para Zabbix não encontrado. Verifique a instalação do Zabbix."
 fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
