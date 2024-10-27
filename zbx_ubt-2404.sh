@@ -112,6 +112,8 @@ systemctl enable --now grafana-server || handle_error "Erro ao habilitar o Grafa
 
 # Finalização
 clear
+echo "############################################################"
 echo "Instalação do Zabbix e Grafana concluída com sucesso."
 echo "Acesse o Zabbix na URL: http://<IP_DO_SEU_SERVIDOR>/zabbix"
 echo "Acesse o Grafana na URL: http://<IP_DO_SEU_SERVIDOR>:3000"
+echo "############################################################"
