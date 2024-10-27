@@ -31,11 +31,11 @@ read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
 echo
 
 # Armazenar informações de configuração (ocultas)
-CONFIG=(
-    "DB_NAME=$DB_NAME"
-    "DB_USER=$DB_USER"
-    "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD"
-    "ZABBIX_USER_PASSWORD=$ZABBIX_USER_PASSWORD"
+CONFIG=( 
+    "DB_NAME=$DB_NAME" 
+    "DB_USER=$DB_USER" 
+    "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD" 
+    "ZABBIX_USER_PASSWORD=$ZABBIX_USER_PASSWORD" 
 )
 
 # Verificação de permissão de root
@@ -93,6 +93,7 @@ zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
 if [ -f /etc/zabbix/zabbix_server.conf ]; then
+    cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
     sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
 else
     echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
