@@ -4,8 +4,8 @@
 ZABBIX_VERSION="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb"
 TIMEZONE="America/Sao_Paulo"
 LOCALE="pt_BR.UTF-8"
-DB_NAME="zabbix_db"
-DB_USER="zabbix_user"
+DB_NAME="zabbix"
+DB_USER="zabbix"
 GRAFANA_VERSION="https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb"
 
 # Função para remover o Zabbix e Grafana, se existirem
@@ -59,25 +59,14 @@ echo "[client]" > "$MYSQL_CNF"
 echo "user=root" >> "$MYSQL_CNF"
 echo "password=$MYSQL_ROOT_PASSWORD" >> "$MYSQL_CNF"
 
-# Verificar se o banco de dados e o usuário já existem e remover se necessário
-DB_EXIST=$(mysql --defaults-file="$MYSQL_CNF" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null)
-if [[ -n "$DB_EXIST" ]]; then
-    echo "O banco de dados '$DB_NAME' já existe. Removendo..."
-    mysql --defaults-file="$MYSQL_CNF" -e "DROP DATABASE $DB_NAME;" || handle_error "Erro ao remover o banco de dados."
-fi
-
-USER_EXIST=$(mysql --defaults-file="$MYSQL_CNF" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null)
-if [[ "$USER_EXIST" == *"1"* ]]; then
-    echo "O usuário '$DB_USER' já existe. Removendo..."
-    mysql --defaults-file="$MYSQL_CNF" -e "DROP USER IF EXISTS '$DB_USER'@'localhost';" || handle_error "Erro ao remover o usuário."
-fi
-
 # Criar banco de dados e usuário do Zabbix
 echo "Criando banco de dados e usuário do Zabbix..."
-mysql --defaults-file="$MYSQL_CNF" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || handle_error "Erro ao criar o banco de dados."
-mysql --defaults-file="$MYSQL_CNF" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || handle_error "Erro ao criar o usuário."
-mysql --defaults-file="$MYSQL_CNF" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || handle_error "Erro ao conceder privilégios."
-mysql --defaults-file="$MYSQL_CNF" -e "FLUSH PRIVILEGES;" || handle_error "Erro ao atualizar privilégios."
+{
+    mysql --defaults-file="$MYSQL_CNF" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;" &&
+    mysql --defaults-file="$MYSQL_CNF" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" &&
+    mysql --defaults-file="$MYSQL_CNF" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" &&
+    mysql --defaults-file="$MYSQL_CNF" -e "FLUSH PRIVILEGES;"
+} || handle_error "Erro ao criar o banco de dados e usuário do Zabbix."
 
 # Instalar Zabbix
 echo "Instalando Zabbix..."
@@ -89,14 +78,17 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 # Verificar e localizar o arquivo SQL
 ZABBIX_SQL_FILE="/usr/share/zabbix-sql-scripts/mysql/server.sql.gz"
 if [[ ! -f "$ZABBIX_SQL_FILE" ]]; then
-    echo "Arquivo SQL não encontrado em '$ZABBIX_SQL_FILE'. Verificando outros arquivos no diretório..."
-    ls /usr/share/zabbix-sql-scripts/mysql/
+    echo "Arquivo SQL não encontrado em '$ZABBIX_SQL_FILE'. Verifique se o pacote 'zabbix-sql-scripts' foi instalado corretamente."
+    echo "Arquivos disponíveis no diretório '/usr/share/zabbix-sql-scripts/mysql/':"
+    ls -l /usr/share/zabbix-sql-scripts/mysql/
     handle_error "Arquivo SQL para Zabbix não encontrado. Verifique a instalação do Zabbix."
 fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
-zcat "$ZABBIX_SQL_FILE" | mysql --defaults-file="$MYSQL_CNF" --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || handle_error "Erro ao importar o esquema do banco de dados Zabbix."
+{
+    zcat "$ZABBIX_SQL_FILE" | mysql --defaults-file="$MYSQL_CNF" --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME"
+} || handle_error "Erro ao importar o esquema do banco de dados Zabbix."
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
