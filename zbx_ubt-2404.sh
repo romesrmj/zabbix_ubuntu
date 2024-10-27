@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Função para remover Zabbix e Grafana, se existentes
+# Função para remover Zabbix e Grafana, se existente
 remove_existing() {
     echo "Removendo Zabbix e Grafana existentes..."
     systemctl stop zabbix-server zabbix-agent apache2 grafana-server
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano
     apt-get autoremove -y
 }
 
@@ -45,7 +45,7 @@ update-locale LANG="$LOCALE"
 # Instalar pacotes necessários
 echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
-apt install -y wget gnupg2 software-properties-common mysql-server
+apt install -y wget gnupg2 software-properties-common mysql-server nano
 
 # Verificar e excluir banco e usuário existentes, se necessário
 echo "Verificando se o banco e o usuário já existem..."
@@ -81,7 +81,8 @@ zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
-sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf
+echo "Senha do Zabbix: $ZABBIX_USER_PASSWORD"  # Para verificar se a variável está definida
+sed -i 's/^DBPassword=.*/DBPassword='"$ZABBIX_USER_PASSWORD"'/' /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
 
 # Instalar Grafana e plugin Zabbix
 echo "Instalando Grafana e plugin do Zabbix..."
@@ -90,6 +91,14 @@ dpkg -i /tmp/grafana.deb || { echo "Erro ao instalar o pacote do Grafana"; exit 
 apt-get install -f -y || { echo "Erro ao corrigir dependências"; exit 1; }
 grafana-cli plugins install alexanderzobnin-zabbix-app || { echo "Erro ao instalar o plugin Zabbix no Grafana"; exit 1; }
 systemctl enable --now grafana-server
+
+# Redefinir senha do usuário do Zabbix após instalação
+echo "Redefinindo senha do usuário Zabbix..."
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || { echo "Erro ao redefinir senha do usuário Zabbix"; exit 1; }
+
+# Conceder permissões novamente ao usuário Zabbix
+echo "Concedendo permissões ao usuário Zabbix..."
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || { echo "Erro ao conceder permissões ao usuário Zabbix"; exit 1; }
 
 # Reiniciar serviços do MySQL
 echo "Reiniciando serviços do MySQL..."
