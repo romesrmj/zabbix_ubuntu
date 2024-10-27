@@ -70,24 +70,30 @@ dpkg -i /tmp/zabbix-release.deb || { echo "Erro ao instalar o pacote Zabbix"; ex
 apt update -y
 apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || { echo "Erro ao instalar Zabbix"; exit 1; }
 
-# Localização e verificação do arquivo SQL para Zabbix
-ZABBIX_SQL_FILE="/usr/share/doc/zabbix-server-mysql/create.sql.gz"
+# Criar diretório temporário para o arquivo SQL
+TEMP_DIR=$(mktemp -d)
+ZABBIX_SQL_FILE="$TEMP_DIR/create.sql.gz"
 
-if [[ ! -f "$ZABBIX_SQL_FILE" ]]; then
-    echo "Arquivo SQL não encontrado em $ZABBIX_SQL_FILE. Buscando em outras localizações..."
+# Verificação do arquivo SQL no diretório temporário
+echo "Copiando o arquivo SQL para diretório temporário..."
+if ! cp /usr/share/zabbix-sql-scripts/mysql/server.sql.gz "$ZABBIX_SQL_FILE" 2>/dev/null; then
+    echo "Arquivo SQL não encontrado no caminho padrão. Verificando outras localizações..."
     ZABBIX_SQL_FILE=$(find /usr/share -type f -name "create.sql.gz" | grep "zabbix" | head -n 1)
-fi
-
-if [[ -z "$ZABBIX_SQL_FILE" ]]; then
-    echo "Arquivo SQL para Zabbix não encontrado em nenhuma das localizações padrão. Verifique a instalação do Zabbix."
-    exit 1
+    
+    if [[ -z "$ZABBIX_SQL_FILE" ]]; then
+        echo "Arquivo SQL para Zabbix não encontrado em nenhuma das localizações padrão. Verifique a instalação do Zabbix."
+        exit 1
+    fi
 else
-    echo "Arquivo SQL encontrado em: $ZABBIX_SQL_FILE"
+    echo "Arquivo SQL encontrado e copiado para: $TEMP_DIR"
 fi
 
 # Importar o esquema inicial para o banco de dados Zabbix
 echo "Importando esquema inicial para o banco de dados Zabbix..."
 zcat "$ZABBIX_SQL_FILE" | mysql --default-character-set=utf8mb4 -u"$DB_USER" -p"$ZABBIX_USER_PASSWORD" "$DB_NAME" || { echo "Erro ao importar o esquema do banco de dados Zabbix"; exit 1; }
+
+# Limpar diretório temporário
+rm -rf "$TEMP_DIR"
 
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
