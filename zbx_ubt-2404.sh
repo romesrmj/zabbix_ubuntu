@@ -96,7 +96,8 @@ zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_
 # Atualizar configuração do Zabbix
 echo "Atualizando configuração do Zabbix..."
 if [ -f /etc/zabbix/zabbix_server.conf ]; then
-    sed -i "s/^DBPassword=.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+    # Usar sed para atualizar a linha DBPassword, permitindo espaços antes e depois do sinal de igual
+    sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
 else
     echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
     exit 1
