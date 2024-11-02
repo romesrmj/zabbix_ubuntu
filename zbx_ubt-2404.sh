@@ -142,8 +142,17 @@ systemctl restart zabbix-server zabbix-agent grafana-server >/dev/null 2>&1 || {
 
 # Mensagem final com informações de acesso
 clear
-toilet -f mono12 --gay "Instalação concluída com sucesso!"
+echo -e "\e[1;32mInstalação concluída com sucesso!\e[0m"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
 echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
+
+
+# Mensagem final com informações de acesso
+#clear
+#toilet -f mono12 --gay "Instalação concluída com sucesso!"
+#SERVER_IP=$(hostname -I | awk '{print $1}')
+#echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
+#echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
+#echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
