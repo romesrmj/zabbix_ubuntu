@@ -6,8 +6,7 @@ set -e  # Para parar o script na primeira ocorrência de erro
 remove_existing() {
     echo "Removendo Zabbix e Grafana existentes..."
     systemctl stop zabbix-server zabbix-agent apache2 grafana-server || true
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano || true
-    apt-get autoremove -y || true
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano >/dev/null 2>&1 || true
 }
 
 # Função para exibir mensagem de progresso com loading
@@ -31,7 +30,7 @@ show_progress() {
 if ! command -v toilet &> /dev/null; then
     echo "Instalando o toilet..."
     apt update -y
-    apt install -y toilet
+    apt install -y toilet >/dev/null 2>&1
 fi
 
 # Solicitar o nome do banco de dados e do usuário
@@ -71,8 +70,8 @@ update-locale LANG="pt_BR.UTF-8"
 
 # Instalar pacotes necessários
 echo "Atualizando sistema e instalando pré-requisitos..."
-apt update -y
-apt install -y wget gnupg2 software-properties-common mysql-server nano
+apt update -y >/dev/null 2>&1
+apt install -y wget gnupg2 software-properties-common mysql-server nano >/dev/null 2>&1
 
 show_progress "Verificando se o banco e o usuário já existem..." 20
 
@@ -98,10 +97,10 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || { echo -e "\033[
 
 # Instalar Zabbix
 echo "Instalando Zabbix..."
-wget "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb" -O /tmp/zabbix-release.deb
-dpkg -i /tmp/zabbix-release.deb || { echo -e "\033[31mErro ao instalar o pacote do Zabbix\033[0m"; exit 1; }
-apt update -y
-apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts || { echo -e "\033[31mErro ao instalar os pacotes do Zabbix\033[0m"; exit 1; }
+wget "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb" -O /tmp/zabbix-release.deb >/dev/null 2>&1
+dpkg -i /tmp/zabbix-release.deb >/dev/null 2>&1 || { echo -e "\033[31mErro ao instalar o pacote do Zabbix\033[0m"; exit 1; }
+apt update -y >/dev/null 2>&1
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts >/dev/null 2>&1 || { echo -e "\033[31mErro ao instalar os pacotes do Zabbix\033[0m"; exit 1; }
 
 show_progress "Importando esquema inicial para o banco de dados Zabbix..." 40
 zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || { echo -e "\033[31mErro ao importar esquema inicial\033[0m"; exit 1; }
@@ -118,14 +117,14 @@ fi
 
 # Reiniciar serviços do MySQL
 echo "Reiniciando serviços do MySQL..."
-systemctl restart mysql || { echo -e "\033[31mErro ao reiniciar o MySQL\033[0m"; exit 1; }
+systemctl restart mysql >/dev/null 2>&1 || { echo -e "\033[31mErro ao reiniciar o MySQL\033[0m"; exit 1; }
 
 # Instalar Grafana e plugin Zabbix
 echo "Instalando Grafana e plugin do Zabbix..."
-wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb
-dpkg -i /tmp/grafana.deb || { echo -e "\033[31mErro ao instalar o pacote do Grafana\033[0m"; exit 1; }
-apt-get install -f -y || { echo -e "\033[31mErro ao corrigir dependências\033[0m"; exit 1; }
-grafana-cli plugins install alexanderzobnin-zabbix-app || { echo -e "\033[31mErro ao instalar o plugin Zabbix no Grafana\033[0m"; exit 1; }
+wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb >/dev/null 2>&1
+dpkg -i /tmp/grafana.deb >/dev/null 2>&1 || { echo -e "\033[31mErro ao instalar o pacote do Grafana\033[0m"; exit 1; }
+apt-get install -f -y >/dev/null 2>&1 || { echo -e "\033[31mErro ao corrigir dependências\033[0m"; exit 1; }
+grafana-cli plugins install alexanderzobnin-zabbix-app >/dev/null 2>&1 || { echo -e "\033[31mErro ao instalar o plugin Zabbix no Grafana\033[0m"; exit 1; }
 
 # Configurar o datasource do Zabbix no Grafana
 echo "Configurando o datasource do Zabbix no Grafana..."
@@ -133,24 +132,18 @@ curl -X POST -H "Content-Type: application/json" -d '{
   "name": "Zabbix",
   "type": "alexanderzobnin-zabbix-datasource",
   "access": "proxy",
-  "url": "http://localhost/zabbix",
+  "url": "http://localhost/zabbix/api_jsonrpc.php",
   "basicAuth": false,
+  "isDefault": true,
   "jsonData": {
-    "zabbixApiUrl": "http://localhost/zabbix/api_jsonrpc.php",
-    "zabbixApiLogin": "'"$DB_USER"'",
-    "zabbixApiPassword": "'"$ZABBIX_USER_PASSWORD"'"
+    "username": "'$DB_USER'",
+    "password": "'$ZABBIX_USER_PASSWORD'"
   }
-}' http://admin:admin@localhost:3000/api/datasources
-
-# Verificar se a configuração foi aplicada com sucesso
-if [[ $? -ne 0 ]]; then
-    echo -e "\033[31mErro ao configurar o datasource do Zabbix no Grafana\033[0m"
-    exit 1
-fi
+}' http://admin:admin@localhost:3000/api/datasources || { echo -e "\033[31mErro ao configurar o datasource do Zabbix no Grafana\033[0m"; exit 1; }
 
 # Reiniciar serviços do Zabbix e Grafana
 echo "Reiniciando serviços do Zabbix e Grafana..."
-systemctl restart zabbix-server zabbix-agent grafana-server || { echo -e "\033[31mErro ao reiniciar os serviços do Zabbix ou Grafana\033[0m"; exit 1; }
+systemctl restart zabbix-server zabbix-agent grafana-server >/dev/null 2>&1 || { echo -e "\033[31mErro ao reiniciar os serviços do Zabbix ou Grafana\033[0m"; exit 1; }
 
 # Mensagem final
 clear
