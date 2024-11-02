@@ -9,6 +9,7 @@ remove_existing() {
     apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano || true
     apt-get autoremove -y || true
 }
+
 clear
 # Verificar e instalar o toilet
 if ! command -v toilet &> /dev/null; then
@@ -36,6 +37,7 @@ CONFIG=(
     "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD" 
     "ZABBIX_USER_PASSWORD=$ZABBIX_USER_PASSWORD" 
 )
+
 clear
 # Verificação de permissão de root
 if [[ "$EUID" -ne 0 ]]; then
@@ -55,7 +57,7 @@ update-locale LANG="pt_BR.UTF-8"
 # Instalar pacotes necessários
 echo "Atualizando sistema e instalando pré-requisitos..."
 apt update -y
-apt install -y wget gnupg2 software-properties-common mysql-server nano
+apt install -y wget gnupg2 software-properties-common mysql-server nano curl
 
 # Verificar e excluir banco e usuário existentes, se necessário
 echo "Verificando se o banco e o usuário já existem..."
@@ -93,7 +95,13 @@ zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_
 echo "Atualizando configuração do Zabbix..."
 if [ -f /etc/zabbix/zabbix_server.conf ]; then
     cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
-    sed -i "s/^\s*DBPassword\s*=\s*.*/DBPassword='$ZABBIX_USER_PASSWORD'/" /etc/zabbix/zabbix_server.conf || { echo "Erro ao atualizar configuração do Zabbix"; exit 1; }
+    
+    # Substituir a linha DBPassword ou adicionar ao final se não existir
+    grep -q "^DBPassword=" /etc/zabbix/zabbix_server.conf \
+        && sed -i "s/^DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf \
+        || echo "DBPassword=$ZABBIX_USER_PASSWORD" >> /etc/zabbix/zabbix_server.conf
+
+    echo "Configuração do Zabbix atualizada com sucesso."
 else
     echo "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
     exit 1
@@ -123,14 +131,7 @@ curl -X POST -H "Content-Type: application/json" -d '{
     "zabbixApiLogin": "'"$DB_USER"'",
     "zabbixApiPassword": "'"$ZABBIX_USER_PASSWORD"'"
   }
-}' http://admin:admin@localhost:3000/api/datasources
-
-# Verificar se a configuração foi bem-sucedida
-if [ $? -eq 0 ]; then
-    echo "Datasource do Zabbix configurado com sucesso no Grafana."
-else
-    echo "Erro ao configurar o datasource do Zabbix no Grafana."
-fi
+}' http://admin:admin@localhost:3000/api/datasources || { echo "Erro ao configurar o datasource do Zabbix no Grafana"; exit 1; }
 
 # Redefinir senha do usuário do Zabbix após instalação
 echo "Redefinindo senha do usuário Zabbix..."
@@ -140,19 +141,16 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "ALTER USER '$DB_USER'@'localhost' IDEN
 echo "Concedendo permissões ao usuário Zabbix..."
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || { echo "Erro ao conceder permissões ao usuário Zabbix"; exit 1; }
 
-# Reiniciar serviços do MySQL
-echo "Reiniciando serviços do MySQL..."
+# Reiniciar serviços do MySQL e Zabbix
+echo "Reiniciando serviços do MySQL e do Zabbix..."
 systemctl restart mysql || { echo "Erro ao reiniciar o MySQL"; exit 1; }
+systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar os serviços do Zabbix e Apache"; exit 1; }
 
-# Reiniciar Zabbix
-echo "Reiniciando serviços do Zabbix..."
-systemctl restart zabbix-server zabbix-agent apache2 || { echo "Erro ao reiniciar serviços do Zabbix"; exit 1; }
-systemctl enable zabbix-server zabbix-agent apache2
+# Iniciar e habilitar Grafana
+echo "Iniciando Grafana..."
+systemctl start grafana-server || { echo "Erro ao iniciar o Grafana"; exit 1; }
+systemctl enable grafana-server || { echo "Erro ao habilitar o Grafana para iniciar automaticamente"; exit 1; }
 
-# Mensagem final com informações de acesso
-clear
-toilet -f standard --gay "Instalação concluída com sucesso!"
-SERVER_IP=$(hostname -I | awk '{print $1}')
-echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
-echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
+toilet -f bigmono9 -F gay "Instalacao Finalizada!"
+
+echo "Instalação concluída com sucesso!"
