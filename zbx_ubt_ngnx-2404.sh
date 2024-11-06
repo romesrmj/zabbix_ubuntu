@@ -25,9 +25,9 @@ error_message() {
 
 # Função para remover Zabbix e Grafana, se existente
 remove_existing() {
-    echo "Removendo instalações anteriores de Zabbix, Grafana e Apache..."
-    systemctl stop zabbix-server zabbix-agent apache2 nginx grafana-server || true
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nginx nano > /dev/null 2>&1 || true
+    echo "Removendo instalações anteriores de Zabbix e Grafana..."
+    systemctl stop zabbix-server zabbix-agent nginx grafana-server || true
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-nginx-conf zabbix-agent grafana nano > /dev/null 2>&1 || true
     apt-get autoremove -y > /dev/null 2>&1 || true
 }
 
@@ -62,6 +62,11 @@ fi
 loading_message "Removendo instalações anteriores" 3
 remove_existing || error_message "Falha ao remover instalações anteriores"
 
+# Limpar o cache do APT e atualizar o sistema
+loading_message "Limpando o cache do APT e atualizando pacotes" 3
+rm -rf /var/lib/apt/lists/* || error_message "Erro ao limpar o cache do APT"
+apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
+
 # Configurar timezone e locale
 loading_message "Configurando timezone e locale" 3
 timedatectl set-timezone "America/Sao_Paulo" || error_message "Falha ao configurar o timezone"
@@ -69,9 +74,8 @@ locale-gen "pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao gerar local
 update-locale LANG="pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao atualizar locale"
 
 # Instalar pacotes necessários
-loading_message "Atualizando o sistema e instalando pacotes" 3
-apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
-apt install -y wget gnupg2 software-properties-common mysql-server nano nginx php-fpm > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
+loading_message "Instalando pacotes necessários" 3
+apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
 
 # Verificar e excluir banco e usuário existentes, se necessário
 loading_message "Verificando banco de dados e usuário" 3
@@ -89,7 +93,7 @@ fi
 
 # Criar banco de dados e usuário
 loading_message "Criando banco de dados e usuário do Zabbix" 3
-mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;" || error_message "Erro ao criar o banco de dados"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || error_message "Erro ao criar o banco de dados"
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || error_message "Erro ao criar o usuário"
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || error_message "Erro ao conceder permissões ao usuário"
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || error_message "Erro ao aplicar privilégios"
@@ -99,11 +103,11 @@ loading_message "Instalando Zabbix" 3
 wget "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb" -O /tmp/zabbix-release.deb > /dev/null 2>&1
 dpkg -i /tmp/zabbix-release.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Zabbix"
 apt update -y > /dev/null 2>&1
-apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-nginx-conf zabbix-sql-scripts zabbix-agent > /dev/null 2>&1 || error_message "Erro ao instalar pacotes do Zabbix"
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-nginx-conf zabbix-agent zabbix-sql-scripts > /dev/null 2>&1 || error_message "Erro ao instalar pacotes do Zabbix"
 
 # Importar esquema inicial
 loading_message "Importando esquema inicial para o banco de dados Zabbix" 3
-zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || error_message "Erro ao importar esquema inicial"
+zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || error_message "Erro ao importar esquema inicial"
 
 # Atualizar configuração do Zabbix
 loading_message "Atualizando configuração do Zabbix" 3
@@ -114,14 +118,13 @@ else
     error_message "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
 fi
 
-# Configurar Nginx para o Zabbix
-loading_message "Configurando Nginx para o Zabbix" 3
+# Configuração do Nginx
+loading_message "Configurando Nginx" 3
 if [ -f /etc/zabbix/nginx.conf ]; then
-    cp /etc/zabbix/nginx.conf /etc/zabbix/nginx.conf.bak  # Backup do nginx.conf
-    sed -i "s|# listen 80;|listen 80;|" /etc/zabbix/nginx.conf
-    sed -i "s|# server_name example.com;|server_name $(hostname -I | awk '{print $1}');|" /etc/zabbix/nginx.conf
+    sed -i "s/# listen 80;/listen 80;/" /etc/zabbix/nginx.conf
+    sed -i "s/# server_name example.com;/server_name $(hostname -I | awk '{print $1}');/" /etc/zabbix/nginx.conf
 else
-    error_message "Arquivo de configuração do Nginx para Zabbix não encontrado: /etc/zabbix/nginx.conf"
+    error_message "Arquivo de configuração do Nginx não encontrado: /etc/zabbix/nginx.conf"
 fi
 
 # Reiniciar serviços do MySQL
@@ -139,11 +142,12 @@ loading_message "Iniciando e habilitando serviços" 3
 systemctl enable zabbix-server zabbix-agent nginx php-fpm grafana-server || error_message "Erro ao habilitar serviços"
 systemctl start zabbix-server zabbix-agent nginx php-fpm grafana-server || error_message "Erro ao iniciar serviços"
 
-# Exibir informações de instalação
-clear
-toilet -f future "Zabbix" | lolcat  # Exibir "Zabbix" com estilo
-echo "Instalação do Zabbix e Grafana concluída com sucesso!"
-echo "Sistema operacional: $(lsb_release -ds)"
+# Display de informações do sistema
+toilet -f big "Zabbix"
+echo "Versão do sistema: $(lsb_release -d | awk -F'\t' '{print $2}')"
 echo "Versão do Zabbix: $(zabbix_server -V | head -n 1)"
 echo "Versão do Grafana: $(grafana-server -v)"
-echo "Acesse o Zabbix pelo IP: $(hostname -I | awk '{print $1}')/zabbix"
+echo "Acesso ao Zabbix: http://$(hostname -I | awk '{print $1}')/zabbix"
+echo "Acesso ao Grafana: http://$(hostname -I | awk '{print $1}'):3000"
+
+echo "Instalação completa!"
