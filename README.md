@@ -1,9 +1,12 @@
-# zabbix_ubuntu
+# zabbix_ubuntu + Netbox
 instalação automatica do zabbix 7Lts + Grafana V 4.5.6
 
 # Baixe o pacote
 
 bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx_ubt-2404.sh)
+
+# Deploy Netbox
+bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/netbox.sh)
 
 #Permissão no arquivo
 chmod +x zabbix_auto.sh
