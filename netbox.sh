@@ -51,8 +51,19 @@ echo "Instalando pacotes de Python..."
 sudo apt install -y python3-boto3 python3-botocore python3-dateutil python3-jmespath python3-packaging python3-s3transfer
 check_command "Erro ao instalar pacotes de Python."
 
-# Criando usuário e grupo para o NetBox
-echo "Criando usuário e grupo para o NetBox..."
+# Verificando a existência do usuário netbox e criando o usuário de sistema
+echo "Verificando e criando usuário e grupo para o NetBox..."
+
+# Se o usuário netbox não for um "usuário de sistema", removê-lo e recriar
+if id "netbox" &>/dev/null; then
+    # Se o usuário não for de sistema, removê-lo
+    if ! grep -q "system" /etc/passwd; then
+        sudo userdel -r netbox
+        check_command "Erro ao remover o usuário netbox anterior."
+    fi
+fi
+
+# Criando o usuário e grupo do NetBox como sistema
 sudo adduser --system --group --disabled-login --disabled-password --gecos "NetBox user" netbox
 check_command "Falha ao criar usuário do sistema NetBox."
 
