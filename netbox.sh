@@ -1,127 +1,112 @@
 #!/bin/bash
 
-# Função para log de erros
-log_error() {
-    echo "[ERRO] $1"
-    echo "[ERRO] $1" >> /var/log/netbox_install.log
-}
+# Limpar a tela para iniciar o script
+clear
 
-# Função para log de sucesso
-log_success() {
-    echo "[SUCESSO] $1"
-    echo "[SUCESSO] $1" >> /var/log/netbox_install.log
-}
-
-# Função para verificar sucesso de comandos
-check_command_success() {
+# Função para verificar o status de um comando e exibir a mensagem de erro em caso de falha
+check_command() {
     if [ $? -ne 0 ]; then
-        log_error "$1"
+        echo "[ERRO] $1"
         exit 1
     fi
 }
 
-# Limpar a tela
-clear
+# Função para exibir uma mensagem de sucesso
+success_message() {
+    echo "[SUCESSO] $1"
+}
 
-echo "Iniciando instalação do NetBox..."
+# Atualizando o sistema e instalando dependências essenciais
+echo "Atualizando o sistema e instalando dependências essenciais..."
+sudo apt update && sudo apt upgrade -y
+check_command "Erro ao atualizar o sistema."
 
-# Atualizando o sistema
-log_success "Atualizando pacotes do sistema..."
-apt-get update -y && apt-get upgrade -y
-check_command_success "Falha ao atualizar pacotes do sistema."
-
-# Instalando dependências essenciais
-log_success "Instalando dependências do sistema..."
-apt-get install -y wget curl python3 python3-pip python3-venv python3-dev build-essential libxml2-dev libxslt1-dev libffi-dev libpq-dev libssl-dev zlib1g-dev
-check_command_success "Falha ao instalar dependências essenciais."
+# Instalando pacotes necessários
+echo "Instalando dependências necessárias..."
+sudo apt install -y wget curl python3 python3-pip python3-dev python3-venv postgresql redis-server
+check_command "Erro ao instalar dependências."
 
 # Verificando a versão do Python
-echo "Verificando a versão do Python..."
-
-# Verificar se o python3 está instalado corretamente
-if ! command -v python3 &>/dev/null; then
-    log_error "Python 3 não encontrado. Instalando Python 3..."
-    apt-get install -y python3
-    check_command_success "Falha ao instalar Python 3."
-fi
-
-# Garantir que o comando python esteja configurado corretamente
-if ! command -v python &>/dev/null; then
-    echo "Criando link simbólico para python..."
-    ln -s /usr/bin/python3 /usr/bin/python
-    check_command_success "Falha ao criar o link simbólico para python."
-    log_success "Link simbólico para python criado."
-fi
-
-# Pegando a versão do Python
-python_version=$(python3 --version | awk '{print $2}')
-required_version="3.8"
-
-# Comparando versões de forma robusta
-version_check=$(echo -e "$required_version\n$python_version" | sort -V | head -n1)
-
-if [[ "$version_check" == "$required_version" ]]; then
-    log_success "Versão do Python verificada: $python_version (compatível)."
-else
-    log_error "A versão do Python não é compatível. Versão mínima requerida: 3.8. Você tem a versão $python_version."
+python_version=$(python3 --version 2>&1 | awk '{print $2}')
+if [[ -z "$python_version" ]]; then
+    echo "[ERRO] Python não instalado. Instale o Python 3 antes de continuar."
     exit 1
 fi
 
-# Instalando o PostgreSQL
-log_success "Instalando PostgreSQL..."
-apt-get install -y postgresql
-check_command_success "Falha ao instalar PostgreSQL."
+echo "Versão do Python instalada: $python_version"
 
-# Criando banco de dados e usuário no PostgreSQL
-log_success "Criando banco de dados e usuário no PostgreSQL..."
-sudo -u postgres psql -c "CREATE DATABASE dbnetbox;"
-sudo -u postgres psql -c "CREATE USER usrnetbox WITH PASSWORD 'senha_secure';"
-sudo -u postgres psql -c "ALTER ROLE usrnetbox SET client_encoding TO 'utf8';"
-sudo -u postgres psql -c "ALTER ROLE usrnetbox SET default_transaction_isolation TO 'read committed';"
-sudo -u postgres psql -c "ALTER ROLE usrnetbox SET timezone TO 'UTC';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE dbnetbox TO usrnetbox;"
-check_command_success "Falha ao configurar banco de dados no PostgreSQL."
+# Garantindo que a versão mínima do Python seja 3.8
+if [[ $(echo "$python_version < 3.8" | bc) -eq 1 ]]; then
+    echo "[ERRO] A versão do Python não é compatível. Versão mínima requerida: 3.8. Você tem a versão $python_version."
+    exit 1
+fi
 
-# Instalando o Redis
-log_success "Instalando Redis..."
-apt-get install -y redis-server
-check_command_success "Falha ao instalar Redis."
+# Instalando pacotes de Python necessários
+echo "Instalando pacotes de Python..."
+sudo apt install -y python3-boto3 python3-botocore python3-dateutil python3-jmespath python3-packaging python3-s3transfer
+check_command "Erro ao instalar pacotes de Python."
+
+# Criando usuário e grupo para o NetBox
+echo "Criando usuário e grupo para o NetBox..."
+sudo adduser --system --group --disabled-login --disabled-password --gecos "NetBox user" netbox
+check_command "Falha ao criar usuário do sistema NetBox."
+
+# Instalando o NetBox
+echo "Baixando e instalando o NetBox..."
+cd /opt
+sudo wget https://github.com/netbox-community/netbox/archive/refs/tags/v3.5.8.tar.gz
+check_command "Erro ao baixar o NetBox."
+
+# Extraindo o arquivo baixado
+sudo tar -xvzf v3.5.8.tar.gz
+check_command "Erro ao extrair o NetBox."
+
+# Criando o link simbólico
+echo "Criando link simbólico do NetBox..."
+sudo ln -s /opt/netbox-3.5.8 /opt/netbox
+check_command "Erro ao criar o link simbólico."
+
+# Instalando dependências do NetBox dentro do ambiente virtual
+echo "Criando ambiente virtual Python..."
+cd /opt/netbox
+python3 -m venv venv
+check_command "Erro ao criar o ambiente virtual."
 
 # Instalando dependências do Python no ambiente virtual
-log_success "Criando ambiente virtual Python e instalando dependências..."
-python3 -m venv /opt/netbox/netbox/venv
-check_command_success "Falha ao criar o ambiente virtual Python."
-
-# Ativando o ambiente virtual e instalando as dependências
-source /opt/netbox/netbox/venv/bin/activate
-pip install -r /opt/netbox/netbox/requirements.txt
-check_command_success "Falha ao instalar dependências do Python."
+echo "Instalando dependências do Python no ambiente virtual..."
+source venv/bin/activate
+pip install -r requirements.txt
+check_command "Erro ao instalar dependências do Python."
 
 # Configurando o NetBox
-log_success "Configurando o NetBox..."
-cp /opt/netbox/netbox/netbox/configuration_example.py /opt/netbox/netbox/netbox/configuration.py
-check_command_success "Falha ao copiar arquivo de configuração."
+echo "Configurando o NetBox..."
+cp configuration_example.py configuration.py
+check_command "Erro ao copiar o arquivo de configuração."
+
+# Modificando a configuração (caso necessário)
+# sed -i 's/#ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = [\'*\']/g' configuration.py
+# check_command "Erro ao configurar ALLOWED_HOSTS."
 
 # Aplicando migrações do banco de dados
-log_success "Aplicando migrações do banco de dados..."
-python /opt/netbox/netbox/manage.py migrate
-check_command_success "Falha ao aplicar migrações do banco de dados."
+echo "Aplicando migrações do banco de dados..."
+python3 manage.py migrate
+check_command "Erro ao aplicar migrações."
 
 # Coletando arquivos estáticos
-log_success "Coletando arquivos estáticos..."
-python /opt/netbox/netbox/manage.py collectstatic --noinput
-check_command_success "Falha ao coletar arquivos estáticos."
+echo "Coletando arquivos estáticos..."
+python3 manage.py collectstatic --noinput
+check_command "Erro ao coletar arquivos estáticos."
 
 # Iniciando o NetBox
-log_success "Iniciando o NetBox..."
-python /opt/netbox/netbox/manage.py runserver 0.0.0.0:8000 &
-check_command_success "Falha ao iniciar o NetBox."
+echo "Iniciando o NetBox..."
+python3 manage.py runserver 0.0.0.0:8000 &
+check_command "Erro ao iniciar o NetBox."
 
-# Exibindo informações de login
+# Obtendo o IP do servidor
 server_ip=$(hostname -I | awk '{print $1}')
-log_success "NetBox iniciado. Acesse http://$server_ip:8000 para confirmar."
+echo "NetBox iniciado. Acesse http://$server_ip:8000 para confirmar."
 
-# Informações de login
+# Exibindo credenciais de login
 echo "Usuários e senhas para login:"
 echo "Usuário: admin"
 echo "Senha: password"
