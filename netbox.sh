@@ -92,13 +92,10 @@ executar_comando "sudo chown --recursive netbox /opt/netbox/netbox/reports/" "Fa
 executar_comando "sudo chown --recursive netbox /opt/netbox/netbox/scripts/" "Falha ao ajustar permissões do diretório /opt/netbox/netbox/scripts/."
 
 # Verificando e copiando o arquivo de configuração
-if [ ! -f "/opt/netbox/netbox/configuration_example.py" ]; then
-    echo "Arquivo 'configuration_example.py' não encontrado, fazendo download do arquivo de configuração..."
-    wget -O /opt/netbox/netbox/configuration_example.py https://raw.githubusercontent.com/netbox-community/netbox/master/netbox/configuration_example.py
+if [ ! -f "/opt/netbox/netbox/configuration.py" ]; then
+    echo "Arquivo 'configuration.py' não encontrado, fazendo download do arquivo de configuração..."
+    wget -O /opt/netbox/netbox/configuration.py https://raw.githubusercontent.com/netbox-community/netbox/master/netbox/configuration.py
 fi
-
-# Copiando o arquivo de configuração para o local adequado
-executar_comando "sudo cp /opt/netbox/netbox/configuration_example.py /opt/netbox/netbox/configuration.py" "Falha ao copiar arquivo de configuração."
 
 # Gerando a chave secreta e configurando o Netbox
 SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe())')
