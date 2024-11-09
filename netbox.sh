@@ -41,6 +41,11 @@ if [[ $(echo "$python_version < 3.8" | bc) -eq 1 ]]; then
     exit 1
 fi
 
+# Verificando o local de instalação do Python e ajustando a prioridade
+echo "Ajustando a versão do Python..."
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
+check_command "Erro ao configurar o Python 3.12."
+
 # Instalando pacotes de Python necessários
 echo "Instalando pacotes de Python..."
 sudo apt install -y python3-boto3 python3-botocore python3-dateutil python3-jmespath python3-packaging python3-s3transfer
@@ -66,7 +71,7 @@ echo "Criando link simbólico do NetBox..."
 sudo ln -s /opt/netbox-3.5.8 /opt/netbox
 check_command "Erro ao criar o link simbólico."
 
-# Instalando dependências do NetBox dentro do ambiente virtual
+# Criando ambiente virtual Python
 echo "Criando ambiente virtual Python..."
 cd /opt/netbox
 python3 -m venv venv
@@ -76,7 +81,7 @@ check_command "Erro ao criar o ambiente virtual."
 echo "Instalando dependências do Python no ambiente virtual..."
 source venv/bin/activate
 pip install -r requirements.txt
-check_command "Erro ao instalar dependências do Python."
+check_command "Erro ao instalar dependências do Python no ambiente virtual."
 
 # Configurando o NetBox
 echo "Configurando o NetBox..."
