@@ -62,8 +62,16 @@ echo "Baixando e extraindo o Netbox..."
 cd /tmp || log_error "Falha ao acessar o diretório /tmp."
 wget https://github.com/netbox-community/netbox/archive/refs/tags/v3.5.8.tar.gz || log_error "Falha ao baixar o Netbox."
 tar -xzf v3.5.8.tar.gz -C /opt || log_error "Falha ao extrair o Netbox."
+
+# Verificando se o link simbólico já existe
+if [ -L /opt/netbox ]; then
+    echo "Link simbólico já existe. Removendo o link antigo..."
+    sudo rm -f /opt/netbox || log_error "Falha ao remover o link simbólico anterior."
+fi
+
+# Criando link simbólico para o Netbox
 sudo ln -s /opt/netbox-3.5.8/ /opt/netbox || log_error "Falha ao criar link simbólico do Netbox."
-log_success "Netbox baixado e extraído com sucesso."
+log_success "Link simbólico criado com sucesso."
 
 # Criando arquivo de configuração
 echo "Criando arquivo de configuração do Netbox..."
