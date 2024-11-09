@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Arquivo de log
 LOG_FILE="/var/log/netbox_install.log"
 exec > >(tee -a ${LOG_FILE}) 2>&1  # Redireciona a saída para o arquivo de log
 
@@ -41,7 +42,7 @@ criar_banco_postgres() {
 executar_comando "sudo apt update && sudo apt upgrade -y" "Falha ao atualizar pacotes do sistema."
 
 # Instalando pacotes necessários
-executar_comando "sudo apt install -y postgresql redis-server python3 python3-pip python3-venv python3-dev build-essential libxml2-dev libxslt1-dev libffi-dev libpq-dev libssl-dev zlib1g-dev wget" "Falha ao instalar pacotes necessários."
+executar_comando "sudo apt install -y postgresql redis-server python3 python3-pip python3-venv python3-dev build-essential libxml2-dev libxslt1-dev libffi-dev libpq-dev libssl-dev zlib1g-dev wget git" "Falha ao instalar pacotes necessários."
 
 # Verificando a versão do PostgreSQL
 psql_version=$(psql -V | awk '{print $3}')
@@ -67,12 +68,20 @@ read -s NETBOX_DB_PASSWORD
 # Criando o banco de dados e o usuário no PostgreSQL
 criar_banco_postgres
 
-# Instalando a última versão estável do Netbox
-cd /tmp
-NETBOX_VERSION="v3.5.8"
-executar_comando "wget https://github.com/netbox-community/netbox/archive/refs/tags/$NETBOX_VERSION.tar.gz" "Falha ao baixar o Netbox."
-executar_comando "sudo tar -xzf $NETBOX_VERSION.tar.gz -C /opt" "Falha ao extrair o Netbox."
-sudo ln -s /opt/netbox-$NETBOX_VERSION /opt/netbox
+# Instalando o Netbox a partir do repositório GitHub
+cd /opt
+if [ ! -d "/opt/netbox" ]; then
+    echo "Clonando o repositório do Netbox..."
+    git clone https://github.com/netbox-community/netbox.git
+else
+    echo "Repositório Netbox já clonado, atualizando..."
+    cd /opt/netbox
+    git pull origin master
+fi
+
+# Verificando a versão mais recente do Netbox
+NETBOX_VERSION=$(git describe --tags)
+echo "Versão do Netbox instalada: $NETBOX_VERSION"
 
 # Criando o usuário Netbox
 criar_usuario_netbox
@@ -82,27 +91,39 @@ executar_comando "sudo chown --recursive netbox /opt/netbox/netbox/media/" "Falh
 executar_comando "sudo chown --recursive netbox /opt/netbox/netbox/reports/" "Falha ao ajustar permissões do diretório /opt/netbox/netbox/reports/."
 executar_comando "sudo chown --recursive netbox /opt/netbox/netbox/scripts/" "Falha ao ajustar permissões do diretório /opt/netbox/netbox/scripts/."
 
-# Copiando o arquivo de configuração e gerando a chave secreta
-cd /opt/netbox/netbox
-executar_comando "sudo cp configuration_example.py configuration.py" "Falha ao copiar arquivo de configuração."
-SECRET_KEY=$(python3 generate_secret_key.py)
-sed -i "s/ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = ['$server_ip']/" configuration.py
-sed -i "s/DATABASE = {/DATABASE = {\n    'NAME': 'dbnetbox',\n    'USER': 'usrnetbox',\n    'PASSWORD': '$NETBOX_DB_PASSWORD',/" configuration.py
-sed -i "s/SECRET_KEY = '.*'/SECRET_KEY = '$SECRET_KEY'/" configuration.py
-sed -i "s/LOGIN_REQUIRED = False/LOGIN_REQUIRED = True/" configuration.py
+# Verificando e copiando o arquivo de configuração
+if [ -f "/opt/netbox/netbox/configuration_example.py" ]; then
+    sudo cp /opt/netbox/netbox/configuration_example.py /opt/netbox/netbox/configuration.py
+else
+    echo "Erro: O arquivo de configuração 'configuration_example.py' não foi encontrado no repositório do Netbox."
+    exit 1
+fi
+
+# Gerando a chave secreta e configurando o Netbox
+SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe())')
+sed -i "s/ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = ['$server_ip']/" /opt/netbox/netbox/configuration.py
+sed -i "s/DATABASE = {/DATABASE = {\n    'NAME': 'dbnetbox',\n    'USER': 'usrnetbox',\n    'PASSWORD': '$NETBOX_DB_PASSWORD',/" /opt/netbox/netbox/configuration.py
+sed -i "s/SECRET_KEY = '.*'/SECRET_KEY = '$SECRET_KEY'/" /opt/netbox/netbox/configuration.py
+sed -i "s/LOGIN_REQUIRED = False/LOGIN_REQUIRED = True/" /opt/netbox/netbox/configuration.py
 
 # Instalando pacotes do Python necessários
-executar_comando "sudo /opt/netbox/upgrade.sh" "Falha ao executar script de upgrade do Netbox."
+executar_comando "sudo pip3 install -r /opt/netbox/requirements.txt" "Falha ao instalar pacotes Python do Netbox."
 
-# Criando o super usuário do Netbox
-cd /opt/netbox/netbox
-executar_comando "source /opt/netbox/venv/bin/activate && python3 manage.py createsuperuser" "Falha ao criar superusuário do Netbox."
+# Configurando o ambiente virtual do Netbox
+sudo -u netbox bash -c "cd /opt/netbox && python3 -m venv venv"
+sudo -u netbox bash -c "source /opt/netbox/venv/bin/activate && pip install -r /opt/netbox/requirements.txt"
 
-# Configurando a tarefa de limpeza
+# Migrando o banco de dados do Netbox
+executar_comando "sudo -u netbox bash -c 'cd /opt/netbox && source /opt/netbox/venv/bin/activate && python3 manage.py migrate'" "Falha ao migrar o banco de dados do Netbox."
+
+# Criando o superusuário do Netbox
+executar_comando "sudo -u netbox bash -c 'cd /opt/netbox && source /opt/netbox/venv/bin/activate && python3 manage.py createsuperuser'" "Falha ao criar superusuário do Netbox."
+
+# Configurando o cron para tarefas do Netbox
 executar_comando "sudo ln -s /opt/netbox/contrib/netbox-housekeeping.sh /etc/cron.daily/netbox-housekeeping" "Falha ao configurar a tarefa de limpeza."
 
 # Iniciando o servidor de teste
-executar_comando "source /opt/netbox/venv/bin/activate && python3 manage.py runserver 0.0.0.0:8000 --insecure" "Falha ao iniciar o servidor de teste do Netbox."
+executar_comando "sudo -u netbox bash -c 'cd /opt/netbox && source /opt/netbox/venv/bin/activate && python3 manage.py runserver 0.0.0.0:8000 --insecure'" "Falha ao iniciar o servidor de teste do Netbox."
 
 # Instalação completa com sucesso
 echo "Instalação do Netbox concluída com sucesso. Acesse http://$server_ip:8000 para confirmar."
