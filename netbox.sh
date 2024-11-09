@@ -41,13 +41,19 @@ log_success "Versão do PostgreSQL verificada: $postgres_version."
 # Verificando e corrigindo versão do Python
 echo "Verificando a versão do Python..."
 
-# Remover versões antigas do Python se existirem
-for ver in $(dpkg -l | grep python3 | awk '{print $2}' | grep -v python3.12); do
-    echo "Removendo versão antiga do Python: $ver"
-    apt-get purge -y $ver
-done
+# Verificar se o python3 está instalado corretamente
+if ! command -v python3 &>/dev/null; then
+    log_error "Python 3 não encontrado. Instalando Python 3..."
+    apt-get install -y python3
+fi
 
-# Garantir que o Python 3.12 esteja instalado
+# Garantir que o comando python esteja configurado corretamente
+if ! command -v python &>/dev/null; then
+    echo "Criando link simbólico para python..."
+    ln -s /usr/bin/python3 /usr/bin/python
+    log_success "Link simbólico para python criado."
+fi
+
 python_version=$(python3 --version | awk '{print $2}')
 required_version="3.8"
 
@@ -59,13 +65,6 @@ else
 fi
 
 log_success "Versão do Python verificada: $python_version."
-
-# Garantir que o comando python esteja configurado corretamente
-if ! command -v python &>/dev/null; then
-    echo "Criando link simbólico para python..."
-    ln -s /usr/bin/python3 /usr/bin/python
-    log_success "Link simbólico para python criado."
-fi
 
 # Instalando o Redis
 echo "Instalando o Redis..."
@@ -122,6 +121,8 @@ log_success "Usuário 'netbox' criado com sucesso."
 # Criando o ambiente virtual
 echo "Criando ambiente virtual Python..."
 cd /opt/netbox/netbox
+
+# Garantir que o Python 3.8 ou superior esteja configurado para venv
 python3 -m venv venv
 
 # Instalando dependências do Python
