@@ -48,11 +48,17 @@ for ver in $(dpkg -l | grep python3 | awk '{print $2}' | grep -v python3.12); do
 done
 
 # Garantir que o Python 3.12 esteja instalado
-if ! python3 --version | grep -q "3.12"; then
-    log_error "A versão do Python não é compatível. Versão mínima requerida: 3.8. Você tem a versão $(python3 -V)."
+python_version=$(python3 --version | awk '{print $2}')
+required_version="3.8"
+
+# Comparando as versões
+if [[ "$(printf '%s\n' "$required_version" "$python_version" | sort -V | head -n1)" != "$required_version" ]]; then
+    log_success "Versão do Python verificada: $python_version."
+else
+    log_error "A versão do Python não é compatível. Versão mínima requerida: 3.8. Você tem a versão $python_version."
 fi
 
-log_success "Versão do Python verificada: $(python3 --version)."
+log_success "Versão do Python verificada: $python_version."
 
 # Instalando o Redis
 echo "Instalando o Redis..."
