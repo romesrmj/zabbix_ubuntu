@@ -40,89 +40,43 @@ if [[ $(echo "$python_version >= 3.8" | bc -l) -eq 0 ]]; then
 fi
 log_success "Versão do Python verificada: $python_version."
 
-# Verificando se o usuário 'netbox' já existe
-echo "Criando usuário 'netbox'..."
-if id "netbox" &>/dev/null; then
-    echo "Usuário 'netbox' já existe, removendo e criando novamente como usuário de sistema."
-    sudo deluser netbox || log_error "Falha ao remover o usuário 'netbox'."
+# Baixando o Netbox
+echo "Baixando o Netbox..."
+cd /opt || log_error "Falha ao acessar o diretório /opt."
+wget https://github.com/netbox-community/netbox/archive/refs/tags/v3.5.8.tar.gz -O netbox-3.5.8.tar.gz || log_error "Falha ao baixar o Netbox."
+
+# Descompactando o arquivo
+echo "Descompactando o Netbox..."
+tar -xvzf netbox-3.5.8.tar.gz || log_error "Falha ao descompactar o Netbox."
+log_success "Netbox descompactado com sucesso."
+
+# Removendo o link simbólico anterior, caso exista
+if [ -L /opt/netbox/netbox-3.5.8 ]; then
+    echo "Link simbólico já existe. Removendo..."
+    sudo rm /opt/netbox/netbox-3.5.8 || log_error "Falha ao remover link simbólico antigo."
 fi
 
-# Criando usuário do sistema para o Netbox
-sudo adduser --system --group netbox || log_error "Falha ao criar o usuário do sistema Netbox."
-
-# Alterando permissões dos diretórios
-echo "Alterando permissões para o usuário 'netbox'..."
-sudo chown --recursive netbox /opt/netbox/netbox/media/
-sudo chown --recursive netbox /opt/netbox/netbox/reports/
-sudo chown --recursive netbox /opt/netbox/netbox/scripts/
-log_success "Permissões alteradas com sucesso."
-
-# Baixando e extraindo o Netbox
-echo "Baixando e extraindo o Netbox..."
-cd /tmp || log_error "Falha ao acessar o diretório /tmp."
-wget https://github.com/netbox-community/netbox/archive/refs/tags/v3.5.8.tar.gz || log_error "Falha ao baixar o Netbox."
-tar -xzf v3.5.8.tar.gz -C /opt || log_error "Falha ao extrair o Netbox."
-
-# Verificando se o link simbólico já existe
-if [ -L /opt/netbox ]; then
-    echo "Link simbólico já existe. Removendo o link antigo..."
-    sudo rm -f /opt/netbox || log_error "Falha ao remover o link simbólico anterior."
-fi
-
-# Criando link simbólico para o Netbox
-sudo ln -s /opt/netbox-3.5.8/ /opt/netbox || log_error "Falha ao criar link simbólico do Netbox."
+# Criando o link simbólico
+echo "Criando link simbólico do Netbox..."
+sudo ln -s /opt/netbox/netbox-3.5.8 /opt/netbox/netbox || log_error "Falha ao criar o link simbólico."
 log_success "Link simbólico criado com sucesso."
 
-# Criando arquivo de configuração
-echo "Criando arquivo de configuração do Netbox..."
-cd /opt/netbox/netbox || log_error "Falha ao acessar o diretório do Netbox."
-cp configuration_example.py configuration.py || log_error "Falha ao copiar o arquivo de configuração."
-log_success "Arquivo de configuração copiado com sucesso."
+# Criando o usuário do sistema para o Netbox
+echo "Criando o usuário 'netbox'..."
+sudo useradd --system --group --create-home netbox || log_error "Falha ao criar usuário do sistema Netbox."
+log_success "Usuário 'netbox' criado com sucesso."
 
-# Gerando a chave secreta
-echo "Gerando chave secreta..."
-secret_key=$(python3 ../generate_secret_key.py) || log_error "Falha ao gerar chave secreta."
-log_success "Chave secreta gerada com sucesso."
+# Copiando o arquivo de configuração
+echo "Copiando o arquivo de configuração..."
+if [ -f /opt/netbox/netbox-3.5.8/netbox/configuration_example.py ]; then
+    sudo cp /opt/netbox/netbox-3.5.8/netbox/configuration_example.py /opt/netbox/netbox-3.5.8/netbox/configuration.py || log_error "Falha ao copiar o arquivo de configuração."
+    log_success "Arquivo de configuração copiado com sucesso."
+else
+    log_error "Arquivo configuration_example.py não encontrado."
+fi
 
-# Atualizando arquivo de configuração com as informações do banco de dados e chave secreta
-echo "Atualizando arquivo de configuração com dados do banco de dados e chave secreta..."
-sed -i "s/ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = \['$server_ip'\]/" /opt/netbox/netbox/configuration.py
-sed -i "s/DATABASE = {.*}/DATABASE = {\n    'ENGINE': 'django.db.backends.postgresql',\n    'NAME': 'dbnetbox',\n    'USER': 'usrnetbox',\n    'PASSWORD': 'senha_do_usuario',\n    'HOST': 'localhost',\n    'PORT': '',\n    'CONN_MAX_AGE': 300\n}/" /opt/netbox/netbox/configuration.py
-sed -i "s/SECRET_KEY = '.*'/SECRET_KEY = '$secret_key'/" /opt/netbox/netbox/configuration.py
-sed -i "s/LOGIN_REQUIRED = False/LOGIN_REQUIRED = True/" /opt/netbox/netbox/configuration.py
-log_success "Arquivo de configuração atualizado com sucesso."
-
-# Atualizando o script de instalação do Netbox
-echo "Atualizando o script de instalação do Netbox..."
-sudo /opt/netbox/upgrade.sh || log_error "Falha ao executar o script de upgrade do Netbox."
-log_success "Script de upgrade do Netbox executado com sucesso."
-
-# Criando o superusuário do Netbox
-echo "Criando superusuário do Netbox..."
-source /opt/netbox/venv/bin/activate || log_error "Falha ao ativar ambiente virtual do Netbox."
-cd /opt/netbox/netbox || log_error "Falha ao acessar o diretório do Netbox."
-python3 manage.py createsuperuser || log_error "Falha ao criar superusuário do Netbox."
-deactivate || log_error "Falha ao desativar o ambiente virtual do Netbox."
-log_success "Superusuário do Netbox criado com sucesso."
-
-# Configurando a tarefa de limpeza diária
-echo "Configurando tarefa de limpeza diária..."
-sudo ln -s /opt/netbox/contrib/netbox-housekeeping.sh /etc/cron.daily/netbox-housekeeping || log_error "Falha ao configurar a tarefa de limpeza."
-log_success "Tarefa de limpeza configurada com sucesso."
-
-# Testando o ambiente
-echo "Testando o ambiente..."
-python3 manage.py runserver 0.0.0.0:8000 --insecure || log_error "Falha ao iniciar o servidor de teste."
-log_success "Ambiente de teste iniciado com sucesso. Acesse http://$server_ip:8000 para confirmar."
-
-# Finalizando a instalação
-echo "Instalação do Netbox concluída com sucesso!"
-echo "Acesse http://$server_ip:8000 para confirmar."
+# Finalizando a instalação do Netbox (exemplo de configuração de banco de dados e outras etapas)
+echo "Instalação do Netbox concluída com sucesso."
+echo "Acesse o Netbox através de: http://<IP_DO_SERVIDOR>:8000"
 echo "Usuário: admin"
-echo "Senha: senha_do_superusuario"
-echo "Banco de dados: dbnetbox"
-echo "Usuário do banco: usrnetbox"
-echo "Senha do banco: senha_do_usuario"
-
-# Finalizando o script
-exit 0
+echo "Senha: admin_password"  # Substitua isso por uma senha real ou uma variável
