@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 set -e  # Parar o script na primeira ocorrência de erro
@@ -76,15 +75,19 @@ apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/n
 
 # Verificar e excluir banco e usuário existentes, se necessário
 loading_message "Verificando banco de dados e usuário" 3
+
+# Verificar se o banco de dados existe
 DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null || true)
 if [[ -n "$DB_EXIST" ]]; then
     loading_message "Removendo banco de dados existente" 3
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || error_message "Erro ao remover o banco de dados"
 fi
 
-USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null || true)
-if [[ "$USER_EXIST" == *"1"* ]]; then
+# Verificar se o usuário existe e remover
+USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT User, Host FROM mysql.user WHERE User = '$DB_USER';" 2>/dev/null || true)
+if [[ -n "$USER_EXIST" ]]; then
     loading_message "Removendo usuário existente" 3
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '$DB_USER'@'localhost';" || error_message "Erro ao revogar permissões do usuário"
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || error_message "Erro ao remover o usuário"
 fi
 
@@ -137,4 +140,4 @@ toilet -f standard --gay "Instalação concluída com sucesso!"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-echo "Senha do usuário Zabbix para o banco de dados: $ZABBIX_USER_PASSWORD"
+echo "
