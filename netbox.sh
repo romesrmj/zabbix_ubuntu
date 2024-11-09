@@ -54,16 +54,23 @@ check_command "Erro ao instalar pacotes de Python."
 # Verificando a existência do usuário netbox e criando o usuário de sistema
 echo "Verificando e criando usuário e grupo para o NetBox..."
 
-# Se o usuário netbox não for um "usuário de sistema", removê-lo e recriar
+# Verificando se o usuário "netbox" existe e se não é um usuário de sistema
 if id "netbox" &>/dev/null; then
-    # Se o usuário não for de sistema, removê-lo
-    if ! grep -q "system" /etc/passwd; then
+    user_info=$(getent passwd netbox)
+    
+    # Verificando se o usuário é um usuário de sistema (uid < 1000)
+    user_uid=$(echo $user_info | cut -d: -f3)
+    if [ "$user_uid" -ge 1000 ]; then
+        echo "[ERRO] O usuário 'netbox' já existe, mas não é um usuário de sistema. Removendo..."
         sudo userdel -r netbox
-        check_command "Erro ao remover o usuário netbox anterior."
+        check_command "Erro ao remover o usuário 'netbox'."
+    else
+        echo "[SUCESSO] O usuário 'netbox' já é um usuário de sistema."
     fi
 fi
 
 # Criando o usuário e grupo do NetBox como sistema
+echo "Criando usuário e grupo do NetBox..."
 sudo adduser --system --group --disabled-login --disabled-password --gecos "NetBox user" netbox
 check_command "Falha ao criar usuário do sistema NetBox."
 
