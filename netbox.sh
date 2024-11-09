@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Limpar a tela no início
+clear
+
 LOG_FILE="/var/log/netbox_install.log"
 
 # Função para registrar mensagens de erro
@@ -11,6 +14,18 @@ log_error() {
 # Função para registrar mensagens de sucesso
 log_success() {
     echo "Sucesso: $1" | tee -a $LOG_FILE
+}
+
+# Função para limpar qualquer resquício de instalação anterior
+clean_previous_installation() {
+    echo "Removendo qualquer instalação anterior..."
+    sudo rm -rf /opt/netbox/netbox-3.5.8
+    sudo rm -f /opt/netbox/netbox || true
+    sudo userdel -r netbox || true
+    sudo dropdb dbnetbox || true
+    sudo dropuser usrnetbox || true
+    sudo rm -f /opt/netbox/netbox-3.5.8.tar.gz
+    log_success "Instalação anterior removida com sucesso."
 }
 
 # Atualizando o sistema
@@ -40,6 +55,9 @@ if [[ $(echo "$python_version >= 3.8" | bc -l) -eq 0 ]]; then
 fi
 log_success "Versão do Python verificada: $python_version."
 
+# Limpeza de qualquer resquício de instalação anterior
+clean_previous_installation
+
 # Baixando o Netbox
 echo "Baixando o Netbox..."
 cd /opt || log_error "Falha ao acessar o diretório /opt."
@@ -63,8 +81,19 @@ log_success "Link simbólico criado com sucesso."
 
 # Criando o usuário do sistema para o Netbox
 echo "Criando o usuário 'netbox'..."
-sudo useradd --system --group --create-home netbox || log_error "Falha ao criar usuário do sistema Netbox."
-log_success "Usuário 'netbox' criado com sucesso."
+if ! id "netbox" &>/dev/null; then
+    sudo useradd --system --group --create-home netbox || log_error "Falha ao criar usuário do sistema Netbox."
+    log_success "Usuário 'netbox' criado com sucesso."
+else
+    echo "Usuário 'netbox' já existe. Continuando..."
+fi
+
+# Criando o banco de dados e usuário no PostgreSQL
+echo "Configurando o banco de dados e usuário do PostgreSQL..."
+sudo -u postgres psql -c "CREATE DATABASE dbnetbox;" || log_error "Falha ao criar o banco de dados dbnetbox."
+sudo -u postgres psql -c "CREATE USER usrnetbox WITH PASSWORD 'your_password';" || log_error "Falha ao criar o usuário usrnetbox."
+sudo -u postgres psql -c "ALTER DATABASE dbnetbox OWNER TO usrnetbox;" || log_error "Falha ao vincular o banco de dados ao usuário."
+log_success "Banco de dados e usuário do PostgreSQL configurados com sucesso."
 
 # Copiando o arquivo de configuração
 echo "Copiando o arquivo de configuração..."
