@@ -33,18 +33,26 @@ apt-get install -y wget curl git python3 python3-pip python3-dev python3-venv bu
 
 log_success "Dependências instaladas com sucesso."
 
-# Verificando versão do PostgreSQL
+# Verificando a versão do PostgreSQL
 echo "Verificando a versão do PostgreSQL..."
 postgres_version=$(psql --version | awk '{print $3}')
 log_success "Versão do PostgreSQL verificada: $postgres_version."
 
-# Verificando versão do Python
+# Verificando e corrigindo versão do Python
 echo "Verificando a versão do Python..."
-python_version=$(python3 -V 2>&1 | awk '{print $2}')
-if ! dpkg --compare-versions "$python_version" ge 3.8; then
-    log_error "A versão do Python não é compatível. Versão mínima requerida: 3.8. Você tem a versão $python_version."
+
+# Remover versões antigas do Python se existirem
+for ver in $(dpkg -l | grep python3 | awk '{print $2}' | grep -v python3.12); do
+    echo "Removendo versão antiga do Python: $ver"
+    apt-get purge -y $ver
+done
+
+# Garantir que o Python 3.12 esteja instalado
+if ! python3 --version | grep -q "3.12"; then
+    log_error "A versão do Python não é compatível. Versão mínima requerida: 3.8. Você tem a versão $(python3 -V)."
 fi
-log_success "Versão do Python verificada: $python_version."
+
+log_success "Versão do Python verificada: $(python3 --version)."
 
 # Instalando o Redis
 echo "Instalando o Redis..."
