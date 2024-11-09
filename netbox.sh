@@ -60,6 +60,13 @@ fi
 
 log_success "Versão do Python verificada: $python_version."
 
+# Garantir que o comando python esteja configurado corretamente
+if ! command -v python &>/dev/null; then
+    echo "Criando link simbólico para python..."
+    ln -s /usr/bin/python3 /usr/bin/python
+    log_success "Link simbólico para python criado."
+fi
+
 # Instalando o Redis
 echo "Instalando o Redis..."
 apt-get install -y redis-server
@@ -112,9 +119,13 @@ fi
 
 log_success "Usuário 'netbox' criado com sucesso."
 
+# Criando o ambiente virtual
+echo "Criando ambiente virtual Python..."
+cd /opt/netbox/netbox
+python3 -m venv venv
+
 # Instalando dependências do Python
 echo "Instalando dependências do Python..."
-cd /opt/netbox/netbox && python3 -m venv venv
 source /opt/netbox/netbox/venv/bin/activate
 pip install -r /opt/netbox/netbox/requirements.txt
 
@@ -146,8 +157,13 @@ log_success "Arquivos estáticos coletados com sucesso."
 echo "Iniciando o NetBox..."
 ./manage.py runserver 0.0.0.0:8000 &
 
-log_success "NetBox iniciado. Acesse http://<IP_DO_SEU_SERVIDOR>:8000 para confirmar."
+log_success "NetBox iniciado."
 
+# Captura do IP do servidor
+server_ip=$(hostname -I | awk '{print $1}')
+echo "Acesse http://$server_ip:8000 para confirmar."
+
+# Exibindo os dados de login
 echo "Usuários e senhas para login:"
 echo "Usuário: admin"
 echo "Senha: password"
