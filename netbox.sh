@@ -12,6 +12,13 @@ log_error() {
     exit 1
 }
 
+# Função para verificar se o comando foi executado com sucesso
+check_command_success() {
+    if [ $? -ne 0 ]; then
+        log_error "$1"
+    fi
+}
+
 # Limpeza de tela
 clear
 
@@ -26,10 +33,12 @@ fi
 # Atualizando pacotes
 echo "Atualizando pacotes do sistema..."
 apt-get update -y && apt-get upgrade -y
+check_command_success "Falha ao atualizar pacotes."
 
 # Instalando dependências
 echo "Instalando dependências necessárias..."
 apt-get install -y wget curl git python3 python3-pip python3-dev python3-venv build-essential libxml2-dev libxslt1-dev libffi-dev libpq-dev libssl-dev zlib1g-dev redis-server postgresql
+check_command_success "Falha ao instalar dependências."
 
 log_success "Dependências instaladas com sucesso."
 
@@ -45,12 +54,14 @@ echo "Verificando a versão do Python..."
 if ! command -v python3 &>/dev/null; then
     log_error "Python 3 não encontrado. Instalando Python 3..."
     apt-get install -y python3
+    check_command_success "Falha ao instalar Python 3."
 fi
 
 # Garantir que o comando python esteja configurado corretamente
 if ! command -v python &>/dev/null; then
     echo "Criando link simbólico para python..."
     ln -s /usr/bin/python3 /usr/bin/python
+    check_command_success "Falha ao criar o link simbólico para python."
     log_success "Link simbólico para python criado."
 fi
 
@@ -69,6 +80,8 @@ log_success "Versão do Python verificada: $python_version."
 # Instalando o Redis
 echo "Instalando o Redis..."
 apt-get install -y redis-server
+check_command_success "Falha ao instalar o Redis."
+
 log_success "Versão do Redis instalada com sucesso."
 
 # Verificando o status do Redis
@@ -91,22 +104,26 @@ psql -U postgres -c "DROP USER IF EXISTS $DB_USER;"
 psql -U postgres -c "CREATE USER $DB_USER WITH PASSWORD 'password';"
 psql -U postgres -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
 psql -U postgres -c "ALTER DATABASE $DB_NAME SET timezone TO 'UTC';"
+check_command_success "Falha ao criar banco de dados ou usuário."
 
 log_success "Banco de dados e usuário do PostgreSQL criados com sucesso."
 
 # Baixando o NetBox
 echo "Baixando o NetBox..."
 wget https://github.com/netbox-community/netbox/archive/refs/tags/v3.5.8.tar.gz -O /tmp/netbox-v3.5.8.tar.gz
+check_command_success "Falha ao baixar o NetBox."
 
 log_success "NetBox baixado com sucesso."
 
 # Extraindo o arquivo do NetBox
 echo "Extraindo o NetBox..."
 tar -xzvf /tmp/netbox-v3.5.8.tar.gz -C /opt/
+check_command_success "Falha ao extrair o NetBox."
 
 # Criando o link simbólico
 echo "Criando link simbólico do NetBox..."
 ln -sfn /opt/netbox/netbox-3.5.8 /opt/netbox/netbox
+check_command_success "Falha ao criar o link simbólico."
 
 # Criando o usuário do sistema
 echo "Criando usuário 'netbox'..."
@@ -114,6 +131,7 @@ if id "netbox" &>/dev/null; then
     echo "Usuário 'netbox' já existe, continuando..."
 else
     adduser --system --group --disabled-password --gecos "" netbox
+    check_command_success "Falha ao criar o usuário 'netbox'."
 fi
 
 log_success "Usuário 'netbox' criado com sucesso."
@@ -124,11 +142,13 @@ cd /opt/netbox/netbox
 
 # Garantir que o Python 3.8 ou superior esteja configurado para venv
 python3 -m venv venv
+check_command_success "Falha ao criar ambiente virtual."
 
 # Instalando dependências do Python
 echo "Instalando dependências do Python..."
 source /opt/netbox/netbox/venv/bin/activate
 pip install -r /opt/netbox/netbox/requirements.txt
+check_command_success "Falha ao instalar dependências do Python."
 
 log_success "Dependências do Python instaladas com sucesso."
 
@@ -137,6 +157,7 @@ echo "Configurando o NetBox..."
 cp /opt/netbox/netbox/netbox/configuration_example.py /opt/netbox/netbox/netbox/configuration.py
 sed -i "s/'DATABASES'.*/'DATABASES': {'default': {'ENGINE': 'django.db.backends.postgresql', 'NAME': '$DB_NAME', 'USER': '$DB_USER', 'PASSWORD': 'password', 'HOST': 'localhost', 'PORT': '5432'}},/" /opt/netbox/netbox/netbox/configuration.py
 sed -i "s/'ALLOWED_HOSTS'.*/'ALLOWED_HOSTS': ['*'],/" /opt/netbox/netbox/netbox/configuration.py
+check_command_success "Falha ao configurar o NetBox."
 
 log_success "Configuração do NetBox concluída."
 
@@ -145,12 +166,14 @@ echo "Aplicando migrações do banco de dados..."
 source /opt/netbox/netbox/venv/bin/activate
 cd /opt/netbox/netbox
 ./manage.py migrate
+check_command_success "Falha ao aplicar migrações."
 
 log_success "Migrações do banco de dados aplicadas com sucesso."
 
 # Criando os arquivos estáticos
 echo "Coletando arquivos estáticos..."
 ./manage.py collectstatic --noinput
+check_command_success "Falha ao coletar arquivos estáticos."
 
 log_success "Arquivos estáticos coletados com sucesso."
 
