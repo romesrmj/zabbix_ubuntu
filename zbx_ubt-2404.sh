@@ -131,20 +131,10 @@ loading_message "Reiniciando serviços do Zabbix" 3
 systemctl restart zabbix-server zabbix-agent apache2 || error_message "Erro ao reiniciar serviços do Zabbix"
 systemctl enable zabbix-server zabbix-agent apache2
 
-
-# Mensagem final com informações de acesso
+# Mensagem final
 clear
-echo -e "\e[1;32mInstalação concluída com sucesso!\e[0m"
+toilet -f standard --gay "Instalação concluída com sucesso!"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
-
-
-# Mensagem final com informações de acesso
-#clear
-#toilet -f mono12 --gay "Instalação concluída com sucesso!"
-#SERVER_IP=$(hostname -I | awk '{print $1}')
-#echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
-#echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-#echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
+echo "Senha do usuário Zabbix para o banco de dados: $ZABBIX_USER_PASSWORD"
