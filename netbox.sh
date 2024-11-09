@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Limpar a tela para iniciar o script
+# Limpar a tela
 clear
 
 # Função para verificar o status de um comando e exibir a mensagem de erro em caso de falha
@@ -16,15 +16,15 @@ success_message() {
     echo "[SUCESSO] $1"
 }
 
-# Atualizando o sistema e instalando dependências essenciais
-echo "Atualizando o sistema e instalando dependências essenciais..."
-sudo apt update && sudo apt upgrade -y
+# Atualizando o sistema
+echo "Atualizando o sistema..."
+sudo apt update -y && sudo apt upgrade -y
 check_command "Erro ao atualizar o sistema."
 
 # Instalando pacotes necessários
-echo "Instalando dependências necessárias..."
+echo "Instalando pacotes necessários..."
 sudo apt install -y wget curl python3 python3-pip python3-dev python3-venv postgresql redis-server
-check_command "Erro ao instalar dependências."
+check_command "Erro ao instalar pacotes necessários."
 
 # Verificando a versão do Python
 python_version=$(python3 --version 2>&1 | awk '{print $2}')
@@ -41,32 +41,23 @@ if [[ $(echo "$python_version < 3.8" | bc) -eq 1 ]]; then
     exit 1
 fi
 
-# Verificando o local de instalação do Python e ajustando a prioridade
-echo "Ajustando a versão do Python..."
-sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
-check_command "Erro ao configurar o Python 3.12."
-
-# Instalando pacotes de Python necessários
-echo "Instalando pacotes de Python..."
-sudo apt install -y python3-boto3 python3-botocore python3-dateutil python3-jmespath python3-packaging python3-s3transfer
-check_command "Erro ao instalar pacotes de Python."
-
-# Verificando a existência do usuário netbox e criando o usuário de sistema
-echo "Verificando e criando usuário e grupo para o NetBox..."
-
-# Verificando se o usuário "netbox" existe e se não é um usuário de sistema
+# Verificando se o usuário "netbox" já existe
 if id "netbox" &>/dev/null; then
-    user_info=$(getent passwd netbox)
+    echo "O usuário 'netbox' já existe, verificando se é um usuário de sistema..."
     
-    # Verificando se o usuário é um usuário de sistema (uid < 1000)
-    user_uid=$(echo $user_info | cut -d: -f3)
+    # Obtendo o ID do usuário netbox
+    user_uid=$(id -u netbox)
+    
+    # Se o UID for maior que 1000, é um usuário não-sistema, e o usuário será removido
     if [ "$user_uid" -ge 1000 ]; then
-        echo "[ERRO] O usuário 'netbox' já existe, mas não é um usuário de sistema. Removendo..."
+        echo "O usuário 'netbox' não é um usuário de sistema. Removendo..."
         sudo userdel -r netbox
         check_command "Erro ao remover o usuário 'netbox'."
     else
-        echo "[SUCESSO] O usuário 'netbox' já é um usuário de sistema."
+        echo "O usuário 'netbox' já é um usuário de sistema."
     fi
+else
+    echo "O usuário 'netbox' não existe. Criando..."
 fi
 
 # Criando o usuário e grupo do NetBox como sistema
@@ -105,10 +96,6 @@ check_command "Erro ao instalar dependências do Python no ambiente virtual."
 echo "Configurando o NetBox..."
 cp configuration_example.py configuration.py
 check_command "Erro ao copiar o arquivo de configuração."
-
-# Modificando a configuração (caso necessário)
-# sed -i 's/#ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = [\'*\']/g' configuration.py
-# check_command "Erro ao configurar ALLOWED_HOSTS."
 
 # Aplicando migrações do banco de dados
 echo "Aplicando migrações do banco de dados..."
