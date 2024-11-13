@@ -125,6 +125,36 @@ execute_step "Instalando Grafana e plugin do Zabbix..." \
     apt-get install -f -y && \
     grafana-cli plugins install alexanderzobnin-zabbix-app
 
+# Configuração automática do plugin Zabbix no Grafana
+configure_grafana_zabbix_plugin() {
+    echo "Configurando o plugin Zabbix no Grafana..."
+    
+    # Definindo o URL e as credenciais de acesso ao Zabbix
+    ZABBIX_URL="http://$SERVER_IP/zabbix"
+    ZABBIX_API_USER="Admin"
+    ZABBIX_API_PASS="zabbix"  # Altere para a senha desejada ou conforme necessário
+
+    # Adicionando a fonte de dados do Zabbix no Grafana via API
+    curl -s -X POST -H "Content-Type: application/json" \
+        -d '{
+            "name": "Zabbix",
+            "type": "alexanderzobnin-zabbix-datasource",
+            "url": "'"$ZABBIX_URL"'",
+            "access": "proxy",
+            "basicAuth": false,
+            "jsonData": {
+                "username": "'"$ZABBIX_API_USER"'",
+                "password": "'"$ZABBIX_API_PASS"'",
+                "zabbixVersion": 5.0
+            }
+        }' http://admin:admin@localhost:3000/api/datasources
+
+    echo -e "\e[32mConfiguração do plugin Zabbix no Grafana concluída.\e[0m"
+}
+
+# Chamando a função de configuração do plugin após a instalação do Grafana
+configure_grafana_zabbix_plugin
+
 # Reiniciar serviços do Grafana
 execute_step "Reiniciando serviços do Grafana..." systemctl restart grafana-server
 
@@ -132,14 +162,8 @@ execute_step "Reiniciando serviços do Grafana..." systemctl restart grafana-ser
 execute_step "Concedendo permissões ao usuário Zabbix..." \
     mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;"
 
-# Reiniciar Zabbix e Apache
-execute_step "Reiniciando serviços do Zabbix e Apache..." \
-    systemctl restart zabbix-server zabbix-agent apache2 && \
-    systemctl enable zabbix-server zabbix-agent apache2
-
 # Mensagem final com informações de acesso
 clear
-SERVER_IP=$(hostname -I | awk '{print $1}')
 echo -e "\e[32mInstalação concluída com sucesso!\e[0m"
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
