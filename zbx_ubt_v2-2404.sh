@@ -55,7 +55,7 @@ check_grafana_port() {
     fi
 }
 
-# Verificar status do firewall e permitir a porta 3000, se necessário
+# Função para verificar configurações do firewall
 check_firewall() {
     echo "Verificando configurações do firewall..."
     if ufw status | grep -q "3000"; then
@@ -64,6 +64,19 @@ check_firewall() {
         echo "Permitindo a porta 3000 no firewall..."
         ufw allow 3000/tcp || error_message "Falha ao permitir a porta 3000 no firewall"
     fi
+}
+
+# Função para remover instalações anteriores
+remove_existing() {
+    echo "Removendo instalações anteriores..."
+    # Remover banco de dados e usuários Zabbix, se existirem
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS $DB_NAME;" || error_message "Erro ao remover o banco de dados"
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER IF EXISTS '$DB_USER'@'localhost';" || error_message "Erro ao remover o usuário"
+    
+    # Remover pacotes do Zabbix e Grafana, se instalados
+    apt-get remove --purge -y zabbix-server-mysql zabbix-frontend-php zabbix-agent grafana apache2 || error_message "Erro ao remover pacotes antigos"
+    apt-get autoremove -y || error_message "Erro ao remover pacotes não utilizados"
+    apt-get clean || error_message "Erro ao limpar pacotes antigos"
 }
 
 clear
@@ -87,7 +100,6 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 # Remover instalação anterior
-loading_message "Removendo instalações anteriores" 3
 remove_existing || error_message "Falha ao remover instalações anteriores"
 
 # Configurar timezone e locale
@@ -131,14 +143,11 @@ apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix
 
 # Importar esquema inicial
 loading_message "Importando esquema inicial para o banco de dados Zabbix" 3
-zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" 2>/dev/null || error_message "Erro ao importar esquema inicial"
+zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" 2>/dev/null || error_message "Erro ao importar o esquema do banco de dados"
 
-# Atualizar configuração do Zabbix
-loading_message "Atualizando configuração do Zabbix" 3
-if [ -f /etc/zabbix/zabbix_server.conf ]; then
-    cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
-    sed -i "s/^#\? DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || error_message "Erro ao atualizar configuração do Zabbix"
-fi
+# Configurar Zabbix Server
+loading_message "Configurando Zabbix Server" 3
+sed -i "s/^# DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || error_message "Erro ao configurar o Zabbix"
 
 # Instalar Grafana
 loading_message "Instalando Grafana" 3
@@ -156,9 +165,6 @@ check_firewall
 # Finalizar instalação
 loading_message "Finalizando instalação do Zabbix e Grafana" 3
 systemctl enable zabbix-server zabbix-agent grafana-server apache2 || error_message "Erro ao habilitar serviços"
-
-echo "Instalação do Zabbix e Grafana concluída com sucesso!"
-
 
 # Mensagem final com logo do Zabbix
 clear
