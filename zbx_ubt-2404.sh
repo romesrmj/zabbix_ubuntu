@@ -1,5 +1,5 @@
 #!/bin/bash
-clear
+
 set -e  # Para parar o script na primeira ocorrência de erro
 
 # Função para exibir a barra de progresso
@@ -96,8 +96,9 @@ execute_step "Instalando Zabbix..." \
     apt update -y && \
     apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts
 
-# Importar esquema inicial para o banco de dados sem a mensagem extra
-execute_step "Importando esquema inicial para o banco de dados Zabbix..." \
+# Importar esquema inicial para o banco de dados Zabbix
+echo "Importando esquema inicial para o banco de dados Zabbix..."
+execute_step "Importando esquema inicial..." \
     zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME"
 
 # Atualizar configuração do Zabbix
@@ -147,4 +148,7 @@ configure_grafana_zabbix_plugin() {
                 "password": "'"$ZABBIX_API_PASS"'",
                 "zabbixVersion": 5.0
             }
-       
+        }' http://localhost:3000/api/datasources
+}
+
+configure_grafana_zabbix_plugin
