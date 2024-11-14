@@ -99,10 +99,15 @@ progress_bar "Importando esquema inicial para o banco de dados Zabbix" 3
 zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || error_message "Erro ao importar esquema inicial"
 
 # Atualizar configuração do Zabbix
-progress_bar "Atualizando configuração do Zabbix" 3
+loading_message "Atualizando configuração do Zabbix" 3
+
 if [ -f /etc/zabbix/zabbix_server.conf ]; then
     cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
+    
+    # Atualiza o valor de DBPassword, tratando linhas comentadas ou não
     sed -i "s/^#\? DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || error_message "Erro ao atualizar configuração do Zabbix"
+    
+    echo "Configuração do Zabbix atualizada com sucesso."
 else
     error_message "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
 fi
@@ -154,10 +159,6 @@ systemctl restart grafana-server || error_message "Erro ao reiniciar o serviço 
 
 # Mensagem final com o logo do ZABBIX
 clear
-echo "Z$Z$Z$Z"
-echo "Z$Z$Z$Z"
-echo "Z$Z$Z$Z"
-echo "Z$Z$Z$Z"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
