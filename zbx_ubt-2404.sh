@@ -1,5 +1,5 @@
 #!/bin/bash
-
+clear
 set -e  # Para parar o script na primeira ocorrência de erro
 
 # Função para exibir a barra de progresso
@@ -96,7 +96,7 @@ execute_step "Instalando Zabbix..." \
     apt update -y && \
     apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts
 
-# Importar esquema inicial para o banco de dados
+# Importar esquema inicial para o banco de dados sem a mensagem extra
 execute_step "Importando esquema inicial para o banco de dados Zabbix..." \
     zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME"
 
@@ -147,19 +147,4 @@ configure_grafana_zabbix_plugin() {
                 "password": "'"$ZABBIX_API_PASS"'",
                 "zabbixVersion": 5.0
             }
-        }' http://admin:admin@localhost:3000/api/datasources || {
-        echo -e "\e[31mErro ao configurar o plugin do Zabbix no Grafana\e[0m"
-        exit 1
-    }
-    echo -e "\e[32mConfiguração do plugin do Zabbix no Grafana concluída com sucesso.\e[0m"
-}
-
-# Chamar a função para configurar o plugin
-configure_grafana_zabbix_plugin
-
-# Mensagem final com informações de acesso
-clear
-echo -e "\e[32mInstalação concluída com sucesso!\e[0m"
-echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
-echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
-echo "A senha do usuário Zabbix para o banco de dados é: $ZABBIX_USER_PASSWORD"
+       
