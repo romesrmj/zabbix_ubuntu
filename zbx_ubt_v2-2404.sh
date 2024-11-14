@@ -31,6 +31,34 @@ remove_existing() {
     apt-get autoremove -y > /dev/null 2>&1 || true
 }
 
+# Função para verificar se o Grafana está ouvindo na porta 3000
+check_grafana_port() {
+    echo "Verificando se o Grafana está ouvindo na porta 3000..."
+    if ! ss -tuln | grep -q ':3000'; then
+        echo "Erro: Grafana não está ouvindo na porta 3000. Tentando corrigir..."
+        
+        # Verificar se o Grafana está ativo
+        if ! systemctl is-active --quiet grafana-server; then
+            echo "Grafana não está em execução. Iniciando o serviço..."
+            systemctl start grafana-server || error_message "Falha ao iniciar o serviço do Grafana"
+        fi
+        
+        # Verificar configuração do arquivo grafana.ini
+        if ! grep -q '^http_port\s*=\s*3000' /etc/grafana/grafana.ini; then
+            echo "Configurando o Grafana para ouvir na porta 3000..."
+            sed -i 's/^#http_port\s*=\s*3000/http_port = 3000/' /etc/grafana/grafana.ini || error_message "Falha ao alterar a configuração do Grafana"
+            systemctl restart grafana-server || error_message "Falha ao reiniciar o serviço do Grafana"
+        fi
+        
+        # Verificar novamente a porta
+        if ! ss -tuln | grep -q ':3000'; then
+            error_message "Grafana ainda não está ouvindo na porta 3000 após a correção."
+        fi
+    else
+        echo "Grafana já está ouvindo na porta 3000."
+    fi
+}
+
 clear
 
 # Solicitar o nome do banco de dados e do usuário
@@ -111,52 +139,16 @@ fi
 loading_message "Reiniciando serviços do MySQL" 3
 systemctl restart mysql || error_message "Erro ao reiniciar o MySQL"
 
-# Instalar Grafana e plugin Zabbix
-loading_message "Instalando Grafana e plugin do Zabbix" 3
-wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb > /dev/null 2>&1
-dpkg -i /tmp/grafana.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Grafana"
-apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir dependências"
+# Verificar o status do Grafana e aplicar correções, se necessário
+check_grafana_port
 
-# Verificar se o Grafana está em execução
-loading_message "Verificando o status do Grafana" 3
-if ! systemctl is-active --quiet grafana-server; then
-    error_message "Grafana não está em execução. Tentando iniciar..."
-    systemctl start grafana-server || error_message "Falha ao iniciar o Grafana"
-fi
-
-# Verificar se o Grafana está ouvindo na porta 3000
-loading_message "Verificando se Grafana está ouvindo na porta 3000" 3
-if ! ss -tuln | grep -q ":3000"; then
-    error_message "Grafana não está ouvindo na porta 3000. Verifique as configurações do Grafana."
-fi
-
-# Instalar o plugin Zabbix no Grafana
-grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
-
-# Configurar e ativar o plugin Zabbix no Grafana
-loading_message "Configurando o plugin Zabbix no Grafana" 3
-curl -X POST -H "Content-Type: application/json" \
-    -d '{
-          "name": "Zabbix",
-          "type": "datasource",
-          "access": "proxy",
-          "url": "http://localhost/zabbix",
-          "basicAuth": false,
-          "jsonData": {
-              "zabbixApiUrl": "http://localhost/zabbix/api_jsonrpc.php",
-              "refresh": "5m"
-          }
-      }' \
-    http://admin:admin@localhost:3000/api/datasources || error_message "Erro ao configurar plugin Zabbix no Grafana"
-
-
-# Reiniciar o Zabbix
-loading_message "Reiniciando o serviço Zabbix & Grafana" 3
-systemctl restart zabbix-server zabbix-agent apache2  v|| error_message "Erro ao reiniciar o serviço Zabbix"
+# Finalizar instalação
+loading_message "Finalizando instalação do Zabbix e Grafana" 3
+systemctl enable zabbix-server zabbix-agent grafana-server apache2 || error_message "Erro ao habilitar serviços"
 
 # Mensagem final com logo do Zabbix
 clear
-echo "ZaBBiX"
+echo "Instalação do Zabbix e Grafana concluída com sucesso!"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
 echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
