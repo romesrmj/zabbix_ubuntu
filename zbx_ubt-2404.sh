@@ -118,6 +118,31 @@ dpkg -i /tmp/grafana.deb > /dev/null 2>&1 || error_message "Erro ao instalar o p
 apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir dependências"
 grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
 
+# Configuração automática do plugin Zabbix no Grafana
+configure_grafana_zabbix_plugin() {
+    echo "Configurando o plugin Zabbix no Grafana..."
+    
+    # Definindo o URL e as credenciais de acesso ao Zabbix
+    ZABBIX_URL="http://$SERVER_IP/zabbix"
+    ZABBIX_API_USER="Admin"
+    ZABBIX_API_PASS="zabbix"  # Altere para a senha desejada ou conforme necessário
+
+    # Adicionando a fonte de dados do Zabbix no Grafana via API
+    curl -s -X POST -H "Content-Type: application/json" \
+        -d '{
+            "name": "Zabbix",
+            "type": "alexanderzobnin-zabbix-datasource",
+            "url": "'"$ZABBIX_URL"'",
+            "access": "proxy",
+            "basicAuth": false,
+            "jsonData": {
+                "username": "'"$ZABBIX_API_USER"'",
+                "password": "'"$ZABBIX_API_PASS"'",
+                "zabbixVersion": 5.0
+            }
+        }' http://localhost:3000/api/datasources
+}
+
 # Reiniciar serviços do Zabbix e Grafana
 loading_message "Reiniciando serviços do Zabbix e Grafana" 3
 systemctl restart zabbix-server zabbix-agent apache2 grafana-server || error_message "Erro ao reiniciar serviços"
