@@ -23,20 +23,12 @@ error_message() {
     exit 1
 }
 
-# Função para remover Zabbix e Grafana, se existente
-remove_existing() {
-    echo "Removendo instalações anteriores de Zabbix e Grafana..."
-    systemctl stop zabbix-server zabbix-agent apache2 grafana-server || true
-    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano > /dev/null 2>&1 || true
-    apt-get autoremove -y > /dev/null 2>&1 || true
-}
-
 # Função para verificar se o Grafana está ouvindo na porta 3000
 check_grafana_port() {
     echo "Verificando se o Grafana está ouvindo na porta 3000..."
     if ! ss -tuln | grep -q ':3000'; then
         echo "Erro: Grafana não está ouvindo na porta 3000. Tentando corrigir..."
-        
+
         # Verificar se o Grafana está ativo
         if ! systemctl is-active --quiet grafana-server; then
             echo "Grafana não está em execução. Iniciando o serviço..."
@@ -49,13 +41,28 @@ check_grafana_port() {
             sed -i 's/^#http_port\s*=\s*3000/http_port = 3000/' /etc/grafana/grafana.ini || error_message "Falha ao alterar a configuração do Grafana"
             systemctl restart grafana-server || error_message "Falha ao reiniciar o serviço do Grafana"
         fi
-        
+
         # Verificar novamente a porta
         if ! ss -tuln | grep -q ':3000'; then
+            # Verificar logs do Grafana para diagnóstico
+            echo "Grafana ainda não está ouvindo na porta 3000. Verificando logs para diagnóstico..."
+            journalctl -u grafana-server -n 20 || error_message "Falha ao recuperar os logs do Grafana"
+            
             error_message "Grafana ainda não está ouvindo na porta 3000 após a correção."
         fi
     else
         echo "Grafana já está ouvindo na porta 3000."
+    fi
+}
+
+# Verificar status do firewall e permitir a porta 3000, se necessário
+check_firewall() {
+    echo "Verificando configurações do firewall..."
+    if ufw status | grep -q "3000"; then
+        echo "A porta 3000 já está permitida no firewall."
+    else
+        echo "Permitindo a porta 3000 no firewall..."
+        ufw allow 3000/tcp || error_message "Falha ao permitir a porta 3000 no firewall"
     fi
 }
 
@@ -92,7 +99,7 @@ update-locale LANG="pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao atu
 # Instalar pacotes necessários
 loading_message "Atualizando o sistema e instalando pacotes" 3
 apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
-apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
+apt install -y wget gnupg2 software-properties-common mysql-server nano ufw > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
 
 # Verificar e excluir banco e usuário existentes, se necessário
 loading_message "Verificando banco de dados e usuário" 3
@@ -131,20 +138,27 @@ loading_message "Atualizando configuração do Zabbix" 3
 if [ -f /etc/zabbix/zabbix_server.conf ]; then
     cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
     sed -i "s/^#\? DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || error_message "Erro ao atualizar configuração do Zabbix"
-else
-    error_message "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
 fi
 
-# Reiniciar serviços do MySQL
-loading_message "Reiniciando serviços do MySQL" 3
-systemctl restart mysql || error_message "Erro ao reiniciar o MySQL"
+# Instalar Grafana
+loading_message "Instalando Grafana" 3
+wget -q -O - https://packages.grafana.com/gpg.key | apt-key add - > /dev/null 2>&1
+add-apt-repository "deb https://packages.grafana.com/oss/deb stable main" > /dev/null 2>&1
+apt update -y > /dev/null 2>&1
+apt install -y grafana > /dev/null 2>&1 || error_message "Erro ao instalar o Grafana"
 
-# Verificar o status do Grafana e aplicar correções, se necessário
+# Verificar se Grafana está ouvindo na porta 3000
 check_grafana_port
+
+# Verificar status do firewall e permitir a porta 3000, se necessário
+check_firewall
 
 # Finalizar instalação
 loading_message "Finalizando instalação do Zabbix e Grafana" 3
 systemctl enable zabbix-server zabbix-agent grafana-server apache2 || error_message "Erro ao habilitar serviços"
+
+echo "Instalação do Zabbix e Grafana concluída com sucesso!"
+
 
 # Mensagem final com logo do Zabbix
 clear
