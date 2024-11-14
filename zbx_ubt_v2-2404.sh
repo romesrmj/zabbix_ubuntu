@@ -116,6 +116,21 @@ loading_message "Instalando Grafana e plugin do Zabbix" 3
 wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb > /dev/null 2>&1
 dpkg -i /tmp/grafana.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Grafana"
 apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir dependências"
+
+# Verificar se o Grafana está em execução
+loading_message "Verificando o status do Grafana" 3
+if ! systemctl is-active --quiet grafana-server; then
+    error_message "Grafana não está em execução. Tentando iniciar..."
+    systemctl start grafana-server || error_message "Falha ao iniciar o Grafana"
+fi
+
+# Verificar se o Grafana está ouvindo na porta 3000
+loading_message "Verificando se Grafana está ouvindo na porta 3000" 3
+if ! ss -tuln | grep -q ":3000"; then
+    error_message "Grafana não está ouvindo na porta 3000. Verifique as configurações do Grafana."
+fi
+
+# Instalar o plugin Zabbix no Grafana
 grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
 
 # Configurar e ativar o plugin Zabbix no Grafana
@@ -129,36 +144,15 @@ curl -X POST -H "Content-Type: application/json" \
           "basicAuth": false,
           "jsonData": {
               "zabbixApiUrl": "http://localhost/zabbix/api_jsonrpc.php",
-              "username": "Admin",
-              "password": "zabbix"
+              "refresh": "5m"
           }
-        }' \
-    http://admin:admin@localhost:3000/api/datasources || error_message "Erro ao configurar o plugin Zabbix no Grafana"
+      }' \
+    http://admin:admin@localhost:3000/api/datasources || error_message "Erro ao configurar plugin Zabbix no Grafana"
 
-# Adicionar painel padrão do Zabbix
-loading_message "Adicionando painel Zabbix no Grafana" 3
-curl -X POST -H "Content-Type: application/json" \
-    -d '{
-          "dashboard": {
-            "title": "Zabbix Dashboard",
-            "panels": [
-              {
-                "type": "graph",
-                "title": "Zabbix Server",
-                "datasource": "Zabbix"
-              }
-            ]
-          }
-        }' \
-    http://admin:admin@localhost:3000/api/dashboards/db || error_message "Erro ao adicionar o painel Zabbix no Grafana"
-
-# Reiniciar Grafana
-loading_message "Reiniciando o serviço Grafana" 3
-systemctl restart grafana-server || error_message "Erro ao reiniciar o serviço Grafana"
 
 # Reiniciar o Zabbix
-loading_message "Reiniciando o serviço Zabbix" 3
-systemctl restart zabbix-server zabbix-agent apache2 || error_message "Erro ao reiniciar o serviço Zabbix"
+loading_message "Reiniciando o serviço Zabbix & Grafana" 3
+systemctl restart zabbix-server zabbix-agent apache2  v|| error_message "Erro ao reiniciar o serviço Zabbix"
 
 # Mensagem final com logo do Zabbix
 clear
