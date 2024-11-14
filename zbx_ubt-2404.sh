@@ -1,50 +1,35 @@
 #!/bin/bash
 
-set -e  # Para parar o script na primeira ocorrência de erro
+set -e  # Parar o script na primeira ocorrência de erro
 
-# Função para exibir a barra de progresso
-progress() {
-    local percentage=$1
-    echo -ne "\r[$(printf "%-50s" | tr ' ' '#')${percentage}%]"
+# Função para exibir barra de progresso
+progress_bar() {
+    local message="$1"
+    local duration=${2:-3}  # Tempo de exibição da barra de progresso
+    echo -n "$message"
+    for ((i=0; i<$duration; i++)); do
+        echo -n "."
+        sleep 1
+    done
+    echo ""
 }
 
-# Função para executar um comando e exibir a barra de progresso
-execute_step() {
-    local description=$1
-    shift
-    echo "$description"
-    "$@" &>/dev/null &
-    local pid=$!
-    local progress_bar=0
-
-    while kill -0 "$pid" &>/dev/null; do
-        sleep 0.1
-        progress_bar=$((progress_bar + 2))
-        [ $progress_bar -gt 100 ] && progress_bar=0
-        progress $progress_bar
-    done
-
-    wait "$pid"
-    if [ $? -ne 0 ]; then
-        echo -e "\e[31m\nErro na etapa: $description\e[0m"
-        exit 1
-    fi
-    echo -e "\e[32m\nConcluído.\e[0m"
+# Função para exibir mensagens de erro em vermelho
+error_message() {
+    local message="$1"
+    tput setaf 1  # Mudar texto para vermelho
+    echo "Erro: $message"
+    tput sgr0     # Voltar à cor padrão
+    exit 1
 }
 
 # Função para remover Zabbix e Grafana, se existente
 remove_existing() {
-    echo "Removendo Zabbix e Grafana existentes..."
+    echo "Removendo instalações anteriores de Zabbix e Grafana..."
     systemctl stop zabbix-server zabbix-agent apache2 grafana-server || true
-    execute_step "Removendo pacotes..." apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana
-    execute_step "Removendo pacotes não utilizados..." apt-get autoremove -y
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano > /dev/null 2>&1 || true
+    apt-get autoremove -y > /dev/null 2>&1 || true
 }
-
-# Verificação de permissão de root
-if [[ "$EUID" -ne 0 ]]; then
-    echo -e "\e[31mPor favor, execute este script como root.\e[0m"
-    exit 1
-fi
 
 clear
 
@@ -60,71 +45,78 @@ echo
 read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
 echo
 
+clear
+# Verificação de permissão de root
+if [[ "$EUID" -ne 0 ]]; then
+    error_message "Por favor, execute este script como root."
+fi
+
 # Remover instalação anterior
-remove_existing
+progress_bar "Removendo instalações anteriores" 3
+remove_existing || error_message "Falha ao remover instalações anteriores"
 
 # Configurar timezone e locale
-execute_step "Configurando timezone e locale..." timedatectl set-timezone "America/Sao_Paulo" && locale-gen "pt_BR.UTF-8" && update-locale LANG="pt_BR.UTF-8"
+progress_bar "Configurando timezone e locale" 3
+timedatectl set-timezone "America/Sao_Paulo" || error_message "Falha ao configurar o timezone"
+locale-gen "pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao gerar locale"
+update-locale LANG="pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao atualizar locale"
 
 # Instalar pacotes necessários
-execute_step "Atualizando sistema e instalando pré-requisitos..." apt update -y && apt install -y wget gnupg2 software-properties-common mysql-server nano
+progress_bar "Atualizando o sistema e instalando pacotes" 3
+apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
+apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
 
 # Verificar e excluir banco e usuário existentes, se necessário
-echo "Verificando e configurando banco de dados..."
+progress_bar "Verificando banco de dados e usuário" 3
 DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null || true)
 if [[ -n "$DB_EXIST" ]]; then
-    echo "O banco de dados '$DB_NAME' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || { echo -e "\e[31mErro ao remover o banco de dados\e[0m"; exit 1; }
+    progress_bar "Removendo banco de dados existente" 3
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || error_message "Erro ao remover o banco de dados"
 fi
 
 USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null || true)
 if [[ "$USER_EXIST" == *"1"* ]]; then
-    echo "O usuário '$DB_USER' já existe. Removendo..."
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || { echo -e "\e[31mErro ao remover o usuário\e[0m"; exit 1; }
+    progress_bar "Removendo usuário existente" 3
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || error_message "Erro ao remover o usuário"
 fi
 
 # Criar banco de dados e usuário
-execute_step "Criando banco de dados e usuário do Zabbix..." \
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" && \
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" && \
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;"
+progress_bar "Criando banco de dados e usuário do Zabbix" 3
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || error_message "Erro ao criar o banco de dados"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || error_message "Erro ao criar o usuário"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || error_message "Erro ao conceder permissões ao usuário"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || error_message "Erro ao aplicar privilégios"
 
 # Instalar Zabbix
-execute_step "Instalando Zabbix..." \
-    wget "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb" -O /tmp/zabbix-release.deb && \
-    dpkg -i /tmp/zabbix-release.deb && \
-    apt update -y && \
-    apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts
+progress_bar "Instalando Zabbix" 3
+wget "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb" -O /tmp/zabbix-release.deb > /dev/null 2>&1
+dpkg -i /tmp/zabbix-release.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Zabbix"
+apt update -y > /dev/null 2>&1
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts > /dev/null 2>&1 || error_message "Erro ao instalar pacotes do Zabbix"
 
-# Importar esquema inicial para o banco de dados Zabbix
-echo "Importando esquema inicial para o banco de dados Zabbix..."
-execute_step "Importando esquema inicial..." \
-    zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME"
+# Importar esquema inicial
+progress_bar "Importando esquema inicial para o banco de dados Zabbix" 3
+zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" || error_message "Erro ao importar esquema inicial"
 
 # Atualizar configuração do Zabbix
-echo "Atualizando configuração do Zabbix..."
+progress_bar "Atualizando configuração do Zabbix" 3
 if [ -f /etc/zabbix/zabbix_server.conf ]; then
-    cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak
-    if grep -q "^\s*DBPassword\s*=" /etc/zabbix/zabbix_server.conf; then
-        sed -i "s/^\s*DBPassword\s*=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || { echo -e "\e[31mErro ao atualizar configuração do Zabbix\e[0m"; exit 1; }
-    else
-        echo "DBPassword=$ZABBIX_USER_PASSWORD" >> /etc/zabbix/zabbix_server.conf || { echo -e "\e[31mErro ao adicionar configuração DBPassword no Zabbix\e[0m"; exit 1; }
-    fi
-    echo -e "\e[32mConfiguração do Zabbix atualizada com sucesso.\e[0m"
+    cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
+    sed -i "s/^#\? DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || error_message "Erro ao atualizar configuração do Zabbix"
 else
-    echo -e "\e[31mArquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf\e[0m"
-    exit 1
+    error_message "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
 fi
 
 # Reiniciar serviços do MySQL
-execute_step "Reiniciando serviços do MySQL..." systemctl restart mysql
+progress_bar "Reiniciando serviços do MySQL" 3
+systemctl restart mysql || error_message "Erro ao reiniciar o MySQL"
 
 # Instalar Grafana e plugin Zabbix
-execute_step "Instalando Grafana e plugin do Zabbix..." \
-    wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb && \
-    dpkg -i /tmp/grafana.deb && \
-    apt-get install -f -y && \
-    grafana-cli plugins install alexanderzobnin-zabbix-app
+progress_bar "Instalando Grafana e plugin do Zabbix" 3
+wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb > /dev/null 2>&1
+dpkg -i /tmp/grafana.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Grafana"
+apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir dependências"
+grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
 
 # Configuração automática do plugin Zabbix no Grafana
 configure_grafana_zabbix_plugin() {
@@ -152,3 +144,21 @@ configure_grafana_zabbix_plugin() {
 }
 
 configure_grafana_zabbix_plugin
+
+# Reiniciar serviços
+progress_bar "Reiniciando serviços do Zabbix" 3
+systemctl restart zabbix-server zabbix-agent apache2 || error_message "Erro ao reiniciar serviços do Zabbix"
+
+progress_bar "Reiniciando serviço do Grafana" 3
+systemctl restart grafana-server || error_message "Erro ao reiniciar o serviço do Grafana"
+
+# Mensagem final com o logo do ZABBIX
+clear
+echo "Z$Z$Z$Z"
+echo "Z$Z$Z$Z"
+echo "Z$Z$Z$Z"
+echo "Z$Z$Z$Z"
+SERVER_IP=$(hostname -I | awk '{print $1}')
+echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
+echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
+echo "Senha do usuário Zabbix para o banco de dados: $ZABBIX_USER_PASSWORD"
