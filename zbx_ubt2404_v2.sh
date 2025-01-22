@@ -31,30 +31,6 @@ remove_existing() {
     apt-get autoremove -y > /dev/null 2>&1 || true
 }
 
-# Função para configurar o plugin Zabbix no Grafana
-configure_grafana_zabbix_plugin() {
-    echo "Configurando o plugin Zabbix no Grafana..."
-    # Configuração do Grafana com plugin Zabbix
-    # Este é um exemplo genérico, ajuste conforme sua configuração:
-    cat <<EOF > /etc/grafana/provisioning/dashboards/zabbix.json
-{
-  "apiVersion": 1,
-  "providers": [
-    {
-      "name": "Zabbix",
-      "orgId": 1,
-      "folder": "Zabbix Dashboards",
-      "type": "file",
-      "options": {
-        "path": "/var/lib/grafana/dashboards/zabbix"
-      }
-    }
-  ]
-}
-EOF
-    systemctl restart grafana-server || error_message "Erro ao reiniciar o Grafana"
-}
-
 clear
 
 # Solicitar o nome do banco de dados e do usuário
@@ -89,6 +65,15 @@ update-locale LANG="pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao atu
 loading_message "Atualizando o sistema e instalando pacotes" 3
 apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
 apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
+
+# Verificar e garantir que o MySQL está em execução
+loading_message "Verificando se o MySQL está em execução" 3
+systemctl start mysql || error_message "Falha ao iniciar o MySQL"
+sleep 5  # Aguardar o MySQL iniciar completamente
+
+# Verificar se o MySQL está acessível
+loading_message "Verificando a conexão com o MySQL" 3
+mysqladmin ping -u root -p"$MYSQL_ROOT_PASSWORD" > /dev/null 2>&1 || error_message "Não foi possível conectar ao MySQL. Verifique se o serviço está em execução."
 
 # Verificar e excluir banco e usuário existentes, se necessário
 loading_message "Verificando banco de dados e usuário" 3
@@ -143,8 +128,9 @@ apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir depend
 grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
 
 # Configuração automática do plugin Zabbix no Grafana
-configure_grafana_zabbix_plugin
-
+configure_grafana_zabbix_plugin() {
+    echo "Configurando o plugin Zabbix no Grafana..."
+    
 # Reiniciar serviços do Zabbix e Grafana
 loading_message "Reiniciando serviços do Zabbix e Grafana" 3
 systemctl restart zabbix-server zabbix-agent apache2 grafana-server || error_message "Erro ao reiniciar serviços"
