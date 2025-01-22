@@ -7,7 +7,7 @@
 LOG_FILE="/var/log/zabbix_grafana_install.log"
 exec > >(tee -i $LOG_FILE) 2>&1
 
-# ==== Funções Auxiliares ====
+# Funções Auxiliares
 GREEN="\033[0;32m"
 RED="\033[0;31m"
 NC="\033[0m"
@@ -22,6 +22,13 @@ function info() {
 function error() {
     echo -e "${RED}[ERROR]${NC} $1"
     exit 1
+}
+
+# Função para verificar o sucesso de um comando
+function check_command() {
+    if [ $? -ne 0 ]; then
+        error "$1"
+    fi
 }
 
 # Função para tratar falhas no comando de instalação
@@ -48,27 +55,33 @@ function check_internet() {
 # Atualização do sistema
 function update_system() {
     info "Atualizando sistema..."
-    apt-get update -qq > /dev/null || handle_install_error "Falha ao atualizar os repositórios" "pacote"
-    apt-get upgrade -y -qq > /dev/null || handle_install_error "Falha ao atualizar os pacotes" "pacote"
+    apt-get update -qq > /dev/null
+    check_command "Falha ao atualizar os repositórios"
+    apt-get upgrade -y -qq > /dev/null
+    check_command "Falha ao atualizar os pacotes"
     info "Sistema atualizado com sucesso."
 }
 
 # Instalação de ferramentas adicionais e serviços de rede
 function install_network_tools() {
     info "Instalando ferramentas de rede e utilitários adicionais..."
-    apt-get install -y -qq snmp snmpd nano net-tools curl wget traceroute iputils-ping > /dev/null || handle_install_error "Falha ao instalar pacotes de rede" "network-tools"
+    apt-get install -y -qq snmp snmpd nano net-tools curl wget traceroute iputils-ping > /dev/null
+    check_command "Falha ao instalar pacotes de rede"
     info "Ferramentas de rede instaladas com sucesso."
 }
 
 # Instalação e configuração do MySQL (MariaDB)
 function configure_mysql() {
     info "Instalando e configurando MySQL..."
-    apt-get install -y -qq mariadb-server > /dev/null || handle_install_error "Falha ao instalar o MariaDB" "mariadb-server"
+    apt-get install -y -qq mariadb-server > /dev/null
+    check_command "Falha ao instalar o MariaDB"
 
-    systemctl start mariadb > /dev/null || handle_install_error "Falha ao iniciar o serviço MariaDB" "mariadb"
-    systemctl enable mariadb > /dev/null || handle_install_error "Falha ao habilitar o serviço MariaDB" "mariadb"
+    systemctl start mariadb > /dev/null
+    check_command "Falha ao iniciar o serviço MariaDB"
+    systemctl enable mariadb > /dev/null
+    check_command "Falha ao habilitar o serviço MariaDB"
 
-    mysql -uroot <<EOF > /dev/null || handle_install_error "Falha ao configurar o banco de dados MySQL" "mysql"
+    mysql -uroot <<EOF > /dev/null
 DELETE FROM mysql.user WHERE User='';
 FLUSH PRIVILEGES;
 CREATE DATABASE zabbix DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_bin;
@@ -76,7 +89,7 @@ CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '$ZABBIX_DB_PASSWORD';
 GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
 FLUSH PRIVILEGES;
 EOF
-
+    check_command "Falha ao configurar o banco de dados MySQL"
     info "Banco de dados configurado com sucesso."
 }
 
@@ -85,13 +98,16 @@ function install_grafana_enterprise() {
     info "Instalando Grafana Enterprise 9.5.3..."
 
     # Baixar o pacote Grafana Enterprise
-    wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb -O /tmp/grafana-enterprise.deb || handle_install_error "Falha ao baixar o pacote do Grafana Enterprise" "grafana-enterprise_9.5.3_amd64.deb"
+    wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb -O /tmp/grafana-enterprise.deb
+    check_command "Falha ao baixar o pacote do Grafana Enterprise"
 
     # Instalar o pacote Grafana Enterprise
-    dpkg -i /tmp/grafana-enterprise.deb > /dev/null || handle_install_error "Falha ao instalar o Grafana Enterprise" "grafana-enterprise"
+    dpkg -i /tmp/grafana-enterprise.deb > /dev/null
+    check_command "Falha ao instalar o Grafana Enterprise"
 
     # Resolver dependências, se necessário
-    apt-get install -f -y -qq > /dev/null || handle_install_error "Falha ao resolver dependências do Grafana" "grafana-enterprise"
+    apt-get install -f -y -qq > /dev/null
+    check_command "Falha ao resolver dependências do Grafana"
 
     # Verificar se o Grafana foi instalado corretamente
     dpkg -l | grep grafana > /dev/null
@@ -102,11 +118,14 @@ function install_grafana_enterprise() {
 
     # Iniciar e habilitar o Grafana
     systemctl enable grafana-server > /dev/null
-    systemctl start grafana-server > /dev/null || handle_install_error "Falha ao iniciar o serviço Grafana" "grafana-server"
+    systemctl start grafana-server > /dev/null
+    check_command "Falha ao iniciar o serviço Grafana"
 
     # Instalar o plugin Zabbix no Grafana
-    grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null || handle_install_error "Falha ao instalar o plugin Zabbix no Grafana" "grafana-plugin-zabbix"
-    systemctl restart grafana-server > /dev/null || handle_install_error "Falha ao reiniciar o Grafana" "grafana-server"
+    grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null
+    check_command "Falha ao instalar o plugin Zabbix no Grafana"
+    systemctl restart grafana-server > /dev/null
+    check_command "Falha ao reiniciar o Grafana"
     info "Grafana Enterprise instalado com sucesso e plugin Zabbix configurado."
 }
 
@@ -114,7 +133,8 @@ function install_grafana_enterprise() {
 function force_grafana_install() {
     # Tentar reinstalar o Grafana, se necessário
     apt-get remove --purge -y grafana > /dev/null
-    apt-get install -y grafana > /dev/null || handle_install_error "Falha ao forçar a instalação do Grafana" "grafana"
+    apt-get install -y grafana > /dev/null
+    check_command "Falha ao forçar a instalação do Grafana"
     info "Grafana instalado com sucesso após tentativa de contorno."
 }
 
@@ -126,21 +146,24 @@ function remove_old_packages() {
     dpkg -l | grep grafana > /dev/null
     if [ $? -eq 0 ]; then
         info "Pacote Grafana encontrado, removendo..."
-        apt-get remove -y grafana > /dev/null || handle_install_error "Falha ao remover o pacote Grafana" "grafana"
+        apt-get remove -y grafana > /dev/null
+        check_command "Falha ao remover o pacote Grafana"
     fi
 
     # Verificar se o pacote Zabbix está instalado
     dpkg -l | grep zabbix > /dev/null
     if [ $? -eq 0 ]; then
         info "Pacote Zabbix encontrado, removendo..."
-        apt-get remove -y zabbix-server zabbix-agent > /dev/null || handle_install_error "Falha ao remover o pacote Zabbix" "zabbix"
+        apt-get remove -y zabbix-server zabbix-agent > /dev/null
+        check_command "Falha ao remover o pacote Zabbix"
     fi
 
     # Verificar se o MySQL (MariaDB) está instalado
     dpkg -l | grep mariadb > /dev/null
     if [ $? -eq 0 ]; then
         info "Pacote MariaDB encontrado, removendo..."
-        apt-get remove -y mariadb-server > /dev/null || handle_install_error "Falha ao remover o pacote MariaDB" "mariadb-server"
+        apt-get remove -y mariadb-server > /dev/null
+        check_command "Falha ao remover o pacote MariaDB"
     fi
 }
 
@@ -163,14 +186,14 @@ function display_final_info() {
     info "MariaDB $(mysql --version)"
 }
 
-# ==== Execução Principal ====
+# Execução Principal
 info "Iniciando instalação..."
 
 check_internet
 update_system
 remove_old_packages
 configure_mysql
-install_zabbix
+install_network_tools
 install_grafana_enterprise
 
 # Exibir informações finais após a instalação
