@@ -93,6 +93,13 @@ function install_grafana_enterprise() {
     # Resolver dependências, se necessário
     apt-get install -f -y -qq > /dev/null || handle_install_error "Falha ao resolver dependências do Grafana" "grafana-enterprise"
 
+    # Verificar se o Grafana foi instalado corretamente
+    dpkg -l | grep grafana > /dev/null
+    if [ $? -ne 0 ]; then
+        info "Grafana não instalado corretamente. Tentando forçar a instalação novamente..."
+        force_grafana_install
+    fi
+
     # Iniciar e habilitar o Grafana
     systemctl enable grafana-server > /dev/null
     systemctl start grafana-server > /dev/null || handle_install_error "Falha ao iniciar o serviço Grafana" "grafana-server"
@@ -101,6 +108,14 @@ function install_grafana_enterprise() {
     grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null || handle_install_error "Falha ao instalar o plugin Zabbix no Grafana" "grafana-plugin-zabbix"
     systemctl restart grafana-server > /dev/null || handle_install_error "Falha ao reiniciar o Grafana" "grafana-server"
     info "Grafana Enterprise instalado com sucesso e plugin Zabbix configurado."
+}
+
+# Função para forçar a instalação do Grafana
+function force_grafana_install() {
+    # Tentar reinstalar o Grafana, se necessário
+    apt-get remove --purge -y grafana > /dev/null
+    apt-get install -y grafana > /dev/null || handle_install_error "Falha ao forçar a instalação do Grafana" "grafana"
+    info "Grafana instalado com sucesso após tentativa de contorno."
 }
 
 # Remover pacotes antigos
