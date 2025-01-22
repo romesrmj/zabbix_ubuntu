@@ -31,6 +31,21 @@ remove_existing() {
     apt-get autoremove -y > /dev/null 2>&1 || true
 }
 
+# Função para verificar se o MySQL está disponível
+wait_for_mysql() {
+    echo "Aguardando MySQL iniciar..."
+    local retries=30
+    local count=0
+    while ! mysqladmin ping -h localhost --silent; do
+        if [ $count -ge $retries ]; then
+            error_message "O MySQL não está respondendo após várias tentativas."
+        fi
+        count=$((count + 1))
+        sleep 5
+    done
+    echo "MySQL está disponível."
+}
+
 clear
 
 # Solicitar o nome do banco de dados e do usuário
@@ -66,14 +81,8 @@ loading_message "Atualizando o sistema e instalando pacotes" 3
 apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
 apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
 
-# Verificar e garantir que o MySQL está em execução
-loading_message "Verificando se o MySQL está em execução" 3
-systemctl start mysql || error_message "Falha ao iniciar o MySQL"
-sleep 5  # Aguardar o MySQL iniciar completamente
-
-# Verificar se o MySQL está acessível
-loading_message "Verificando a conexão com o MySQL" 3
-mysqladmin ping -u root -p"$MYSQL_ROOT_PASSWORD" > /dev/null 2>&1 || error_message "Não foi possível conectar ao MySQL. Verifique se o serviço está em execução."
+# Aguardar o MySQL iniciar
+wait_for_mysql
 
 # Verificar e excluir banco e usuário existentes, se necessário
 loading_message "Verificando banco de dados e usuário" 3
@@ -127,10 +136,6 @@ dpkg -i /tmp/grafana.deb > /dev/null 2>&1 || error_message "Erro ao instalar o p
 apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir dependências"
 grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
 
-# Configuração automática do plugin Zabbix no Grafana
-configure_grafana_zabbix_plugin() {
-    echo "Configurando o plugin Zabbix no Grafana..."
-    
 # Reiniciar serviços do Zabbix e Grafana
 loading_message "Reiniciando serviços do Zabbix e Grafana" 3
 systemctl restart zabbix-server zabbix-agent apache2 grafana-server || error_message "Erro ao reiniciar serviços"
