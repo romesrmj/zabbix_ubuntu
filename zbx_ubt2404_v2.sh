@@ -1,200 +1,161 @@
 #!/bin/bash
 
-# ===========================
-# Instalação Automática: Zabbix + Grafana Enterprise
-# ===========================
+set -e  # Parar o script na primeira ocorrência de erro
 
-LOG_FILE="/var/log/zabbix_grafana_install.log"
-exec > >(tee -i $LOG_FILE) 2>&1
-
-# Funções Auxiliares
-GREEN="\033[0;32m"
-RED="\033[0;31m"
-NC="\033[0m"
-
-ZABBIX_DB_PASSWORD="zabbix_password"
-MYSQL_ROOT_PASSWORD="root_password"
-
-function info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+# Função para exibir a barra de progresso
+loading_message() {
+    local message="$1"
+    local duration=${2:-3}  # Tempo de exibição da barra de progresso
+    echo -n "$message"
+    for ((i=0; i<$duration; i++)); do
+        echo -n "."
+        sleep 1
+    done
+    echo ""
 }
 
-function error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+# Função para exibir mensagens de erro em vermelho
+error_message() {
+    local message="$1"
+    tput setaf 1  # Mudar texto para vermelho
+    echo "Erro: $message"
+    tput sgr0     # Voltar à cor padrão
     exit 1
 }
 
-# Função para verificar o sucesso de um comando
-function check_command() {
-    if [ $? -ne 0 ]; then
-        error "$1"
-    fi
+# Função para remover Zabbix e Grafana, se existente
+remove_existing() {
+    echo "Removendo instalações anteriores de Zabbix e Grafana..."
+    systemctl stop zabbix-server zabbix-agent apache2 grafana-server || true
+    apt-get purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana nano > /dev/null 2>&1 || true
+    apt-get autoremove -y > /dev/null 2>&1 || true
 }
 
-# Função para tratar falhas no comando de instalação
-function handle_install_error() {
-    ERROR_MSG=$1
-    PACKAGE_NAME=$2
-    if [ -z "$PACKAGE_NAME" ]; then
-        PACKAGE_NAME="pacote"
-    fi
-
-    error "$ERROR_MSG. Verifique se o pacote $PACKAGE_NAME está disponível nos repositórios ou se a URL de download está correta."
+# Função para configurar o plugin Zabbix no Grafana
+configure_grafana_zabbix_plugin() {
+    echo "Configurando o plugin Zabbix no Grafana..."
+    # Configuração do Grafana com plugin Zabbix
+    # Este é um exemplo genérico, ajuste conforme sua configuração:
+    cat <<EOF > /etc/grafana/provisioning/dashboards/zabbix.json
+{
+  "apiVersion": 1,
+  "providers": [
+    {
+      "name": "Zabbix",
+      "orgId": 1,
+      "folder": "Zabbix Dashboards",
+      "type": "file",
+      "options": {
+        "path": "/var/lib/grafana/dashboards/zabbix"
+      }
+    }
+  ]
 }
-
-# Verificar conectividade com a internet
-function check_internet() {
-    info "Verificando conexão com a internet..."
-    wget -q --spider http://google.com
-    if [ $? -ne 0 ]; then
-        handle_install_error "Conexão com a internet não detectada" "pacote"
-    fi
-    info "Conexão com a internet verificada."
-}
-
-# Atualização do sistema
-function update_system() {
-    info "Atualizando sistema..."
-    apt-get update -qq > /dev/null
-    check_command "Falha ao atualizar os repositórios"
-    apt-get upgrade -y -qq > /dev/null
-    check_command "Falha ao atualizar os pacotes"
-    info "Sistema atualizado com sucesso."
-}
-
-# Instalação de ferramentas adicionais e serviços de rede
-function install_network_tools() {
-    info "Instalando ferramentas de rede e utilitários adicionais..."
-    apt-get install -y -qq snmp snmpd nano net-tools curl wget traceroute iputils-ping > /dev/null
-    check_command "Falha ao instalar pacotes de rede"
-    info "Ferramentas de rede instaladas com sucesso."
-}
-
-# Instalação e configuração do MySQL (MariaDB)
-function configure_mysql() {
-    info "Instalando e configurando MySQL..."
-    apt-get install -y -qq mariadb-server > /dev/null
-    check_command "Falha ao instalar o MariaDB"
-
-    systemctl start mariadb > /dev/null
-    check_command "Falha ao iniciar o serviço MariaDB"
-    systemctl enable mariadb > /dev/null
-    check_command "Falha ao habilitar o serviço MariaDB"
-
-    mysql -uroot <<EOF > /dev/null
-DELETE FROM mysql.user WHERE User='';
-FLUSH PRIVILEGES;
-CREATE DATABASE zabbix DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_bin;
-CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '$ZABBIX_DB_PASSWORD';
-GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
-FLUSH PRIVILEGES;
 EOF
-    check_command "Falha ao configurar o banco de dados MySQL"
-    info "Banco de dados configurado com sucesso."
+    systemctl restart grafana-server || error_message "Erro ao reiniciar o Grafana"
 }
 
-# Instalação do Grafana Enterprise (Versão 9.5.3)
-function install_grafana_enterprise() {
-    info "Instalando Grafana Enterprise 9.5.3..."
+clear
 
-    # Baixar o pacote Grafana Enterprise
-    wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb -O /tmp/grafana-enterprise.deb
-    check_command "Falha ao baixar o pacote do Grafana Enterprise"
+# Solicitar o nome do banco de dados e do usuário
+read -p "Digite o nome do banco de dados a ser criado (padrão: zabbix_db): " DB_NAME
+DB_NAME=${DB_NAME:-zabbix_db}
+read -p "Digite o nome do usuário do banco de dados (padrão: zabbix_user): " DB_USER
+DB_USER=${DB_USER:-zabbix_user}
 
-    # Instalar o pacote Grafana Enterprise
-    dpkg -i /tmp/grafana-enterprise.deb > /dev/null
-    check_command "Falha ao instalar o Grafana Enterprise"
+# Solicitar senhas
+read -s -p "Insira a senha do root do MySQL: " MYSQL_ROOT_PASSWORD
+echo
+read -s -p "Insira a senha para o usuário do Zabbix: " ZABBIX_USER_PASSWORD
+echo
 
-    # Resolver dependências, se necessário
-    apt-get install -f -y -qq > /dev/null
-    check_command "Falha ao resolver dependências do Grafana"
+clear
+# Verificação de permissão de root
+if [[ "$EUID" -ne 0 ]]; then
+    error_message "Por favor, execute este script como root."
+fi
 
-    # Verificar se o Grafana foi instalado corretamente
-    dpkg -l | grep grafana > /dev/null
-    if [ $? -ne 0 ]; then
-        info "Grafana não instalado corretamente. Tentando forçar a instalação novamente..."
-        force_grafana_install
-    fi
+# Remover instalação anterior
+loading_message "Removendo instalações anteriores" 3
+remove_existing || error_message "Falha ao remover instalações anteriores"
 
-    # Iniciar e habilitar o Grafana
-    systemctl enable grafana-server > /dev/null
-    systemctl start grafana-server > /dev/null
-    check_command "Falha ao iniciar o serviço Grafana"
+# Configurar timezone e locale
+loading_message "Configurando timezone e locale" 3
+timedatectl set-timezone "America/Sao_Paulo" || error_message "Falha ao configurar o timezone"
+locale-gen "pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao gerar locale"
+update-locale LANG="pt_BR.UTF-8" > /dev/null 2>&1 || error_message "Falha ao atualizar locale"
 
-    # Instalar o plugin Zabbix no Grafana
-    grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null
-    check_command "Falha ao instalar o plugin Zabbix no Grafana"
-    systemctl restart grafana-server > /dev/null
-    check_command "Falha ao reiniciar o Grafana"
-    info "Grafana Enterprise instalado com sucesso e plugin Zabbix configurado."
-}
+# Instalar pacotes necessários
+loading_message "Atualizando o sistema e instalando pacotes" 3
+apt update -y > /dev/null 2>&1 || error_message "Falha ao atualizar pacotes"
+apt install -y wget gnupg2 software-properties-common mysql-server nano > /dev/null 2>&1 || error_message "Falha ao instalar pacotes necessários"
 
-# Função para forçar a instalação do Grafana
-function force_grafana_install() {
-    # Tentar reinstalar o Grafana, se necessário
-    apt-get remove --purge -y grafana > /dev/null
-    apt-get install -y grafana > /dev/null
-    check_command "Falha ao forçar a instalação do Grafana"
-    info "Grafana instalado com sucesso após tentativa de contorno."
-}
+# Verificar e excluir banco e usuário existentes, se necessário
+loading_message "Verificando banco de dados e usuário" 3
+DB_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" 2>/dev/null || true)
+if [[ -n "$DB_EXIST" ]]; then
+    loading_message "Removendo banco de dados existente" 3
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE $DB_NAME;" || error_message "Erro ao remover o banco de dados"
+fi
 
-# Remover pacotes antigos
-function remove_old_packages() {
-    info "Removendo pacotes antigos, se existirem..."
+USER_EXIST=$(mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = '$DB_USER');" 2>/dev/null || true)
+if [[ "$USER_EXIST" == *"1"* ]]; then
+    loading_message "Removendo usuário existente" 3
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER '$DB_USER'@'localhost';" || error_message "Erro ao remover o usuário"
+fi
 
-    # Verificar se o pacote Grafana está instalado
-    dpkg -l | grep grafana > /dev/null
-    if [ $? -eq 0 ]; then
-        info "Pacote Grafana encontrado, removendo..."
-        apt-get remove -y grafana > /dev/null
-        check_command "Falha ao remover o pacote Grafana"
-    fi
+# Criar banco de dados e usuário
+loading_message "Criando banco de dados e usuário do Zabbix" 3
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $DB_NAME CHARACTER SET utf8 COLLATE utf8_bin;" || error_message "Erro ao criar o banco de dados"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$ZABBIX_USER_PASSWORD';" || error_message "Erro ao criar o usuário"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';" || error_message "Erro ao conceder permissões ao usuário"
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" || error_message "Erro ao aplicar privilégios"
 
-    # Verificar se o pacote Zabbix está instalado
-    dpkg -l | grep zabbix > /dev/null
-    if [ $? -eq 0 ]; then
-        info "Pacote Zabbix encontrado, removendo..."
-        apt-get remove -y zabbix-server zabbix-agent > /dev/null
-        check_command "Falha ao remover o pacote Zabbix"
-    fi
+# Instalar Zabbix
+loading_message "Instalando Zabbix" 3
+wget "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest+ubuntu24.04_all.deb" -O /tmp/zabbix-release.deb > /dev/null 2>&1
+dpkg -i /tmp/zabbix-release.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Zabbix"
+apt update -y > /dev/null 2>&1
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent zabbix-sql-scripts > /dev/null 2>&1 || error_message "Erro ao instalar pacotes do Zabbix"
 
-    # Verificar se o MySQL (MariaDB) está instalado
-    dpkg -l | grep mariadb > /dev/null
-    if [ $? -eq 0 ]; then
-        info "Pacote MariaDB encontrado, removendo..."
-        apt-get remove -y mariadb-server > /dev/null
-        check_command "Falha ao remover o pacote MariaDB"
-    fi
-}
+# Importar esquema inicial
+loading_message "Importando esquema inicial para o banco de dados Zabbix" 3
+zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" 2>/dev/null || error_message "Erro ao importar esquema inicial"
 
-# Exibir informações finais de instalação
-function display_final_info() {
-    info "Instalação concluída com sucesso!"
-    info "============================="
-    info "Acesse o Zabbix através do navegador em: http://$(hostname -I | awk '{print $1}')/zabbix"
-    info "Usuário: Admin"
-    info "Senha: zabbix"
-    info "============================="
-    info "Acesse o Grafana através do navegador em: http://$(hostname -I | awk '{print $1}'):3000"
-    info "Usuário: admin"
-    info "Senha: admin"
-    info "============================="
-    info "Versões dos Sistemas Instalados:"
-    info "Ubuntu $(lsb_release -rs)"
-    info "Zabbix $(zabbix_server -V | head -n 1)"
-    info "Grafana $(grafana-cli -v | head -n 1)"
-    info "MariaDB $(mysql --version)"
-}
+# Atualizar configuração do Zabbix
+loading_message "Atualizando configuração do Zabbix" 3
+if [ -f /etc/zabbix/zabbix_server.conf ]; then
+    cp /etc/zabbix/zabbix_server.conf /etc/zabbix/zabbix_server.conf.bak  # Criar backup
+    sed -i "s/^#\? DBPassword=.*/DBPassword=$ZABBIX_USER_PASSWORD/" /etc/zabbix/zabbix_server.conf || error_message "Erro ao atualizar configuração do Zabbix"
+else
+    error_message "Arquivo de configuração do Zabbix não encontrado: /etc/zabbix/zabbix_server.conf"
+fi
 
-# Execução Principal
-info "Iniciando instalação..."
+# Reiniciar serviços do MySQL
+loading_message "Reiniciando serviços do MySQL" 3
+systemctl restart mysql || error_message "Erro ao reiniciar o MySQL"
 
-check_internet
-update_system
-remove_old_packages
-configure_mysql
-install_network_tools
-install_grafana_enterprise
+# Instalar Grafana e plugin Zabbix
+loading_message "Instalando Grafana e plugin do Zabbix" 3
+wget "https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb" -O /tmp/grafana.deb > /dev/null 2>&1
+dpkg -i /tmp/grafana.deb > /dev/null 2>&1 || error_message "Erro ao instalar o pacote do Grafana"
+apt-get install -f -y > /dev/null 2>&1 || error_message "Erro ao corrigir dependências"
+grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null 2>&1 || error_message "Erro ao instalar plugin Zabbix no Grafana"
 
-# Exibir informações finais após a instalação
-display_final_info
+# Configuração automática do plugin Zabbix no Grafana
+configure_grafana_zabbix_plugin
+
+# Reiniciar serviços do Zabbix e Grafana
+loading_message "Reiniciando serviços do Zabbix e Grafana" 3
+systemctl restart zabbix-server zabbix-agent apache2 grafana-server || error_message "Erro ao reiniciar serviços"
+
+# Mensagem final com logo do Zabbix
+clear
+echo "Z$Z$Z$Z"
+echo "Z$Z$Z$Z"
+echo "Z$Z$Z$Z"
+echo "Z$Z$Z$Z"
+SERVER_IP=$(hostname -I | awk '{print $1}')
+echo "Acesse o Zabbix na URL: http://$SERVER_IP/zabbix"
+echo "Acesse o Grafana na URL: http://$SERVER_IP:3000"
+echo "Senha do usuário Zabbix para o banco de dados: $ZABBIX_USER_PASSWORD"
