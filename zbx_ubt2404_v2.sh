@@ -13,6 +13,9 @@ GREEN="\033[0;32m"
 RED="\033[0;31m"
 NC="\033[0m"
 
+ZABBIX_DB_PASSWORD="zabbix_password"
+MYSQL_ROOT_PASSWORD="root_password"
+
 function info() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
@@ -42,15 +45,15 @@ function configure_timezone() {
 # Atualização do sistema
 function update_system() {
     info "Atualizando sistema..."
-    apt-get update -qq || error "Falha ao atualizar os repositórios."
-    apt-get upgrade -y -qq || error "Falha ao atualizar os pacotes."
+    apt-get update -qq > /dev/null || error "Falha ao atualizar os repositórios."
+    apt-get upgrade -y -qq > /dev/null || error "Falha ao atualizar os pacotes."
     info "Sistema atualizado com sucesso."
 }
 
 # Instalação de ferramentas adicionais e serviços de rede
 function install_network_tools() {
     info "Instalando ferramentas de rede e utilitários adicionais..."
-    apt-get install -y -qq snmp snmpd nano net-tools curl wget traceroute iputils-ping || error "Falha ao instalar pacotes de rede."
+    apt-get install -y -qq snmp snmpd nano net-tools curl wget traceroute iputils-ping > /dev/null || error "Falha ao instalar pacotes de rede."
     info "Ferramentas de rede instaladas com sucesso."
 }
 
@@ -62,79 +65,99 @@ function clean_previous_installations() {
     for service in zabbix-server zabbix-agent grafana-server mariadb apache2; do
         if systemctl is-active --quiet $service; then
             info "Parando serviço: $service..."
-            systemctl stop $service || error "Falha ao parar o serviço $service."
+            systemctl stop $service > /dev/null || error "Falha ao parar o serviço $service."
         fi
 
         if systemctl is-enabled --quiet $service; then
             info "Desabilitando serviço: $service..."
-            systemctl disable $service || error "Falha ao desabilitar o serviço $service."
+            systemctl disable $service > /dev/null || error "Falha ao desabilitar o serviço $service."
         fi
     done
 
     # Remover pacotes e configurações residuais
     info "Removendo pacotes relacionados..."
-    apt-get purge -y -qq zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana-enterprise mariadb-server || error "Falha ao remover pacotes."
-    apt-get autoremove -y -qq || error "Falha ao remover dependências desnecessárias."
-    apt-get autoclean -qq || error "Falha ao limpar pacotes antigos."
+    apt-get purge -y -qq zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana-enterprise mariadb-server > /dev/null || error "Falha ao remover pacotes."
+    apt-get autoremove -y -qq > /dev/null || error "Falha ao remover dependências desnecessárias."
+    apt-get autoclean -qq > /dev/null || error "Falha ao limpar pacotes antigos."
 
     # Remover arquivos residuais de configuração
     info "Limpando arquivos residuais..."
-    rm -rf /etc/zabbix /etc/grafana /var/lib/mysql /var/lib/grafana || error "Falha ao limpar arquivos residuais."
+    rm -rf /etc/zabbix /etc/grafana /var/lib/mysql /var/lib/grafana > /dev/null || error "Falha ao limpar arquivos residuais."
 
     info "Ambiente limpo com sucesso!"
 }
 
-# Instalação do MySQL
+# Instalação e configuração do MySQL (MariaDB)
 function configure_mysql() {
     info "Instalando e configurando MySQL..."
-    apt-get install -y -qq mariadb-server || error "Falha ao instalar o MariaDB."
+    apt-get install -y -qq mariadb-server > /dev/null || error "Falha ao instalar o MariaDB."
 
-    systemctl start mariadb || error "Falha ao iniciar o serviço MariaDB."
-    systemctl enable mariadb || error "Falha ao habilitar o serviço MariaDB."
+    systemctl start mariadb > /dev/null || error "Falha ao iniciar o serviço MariaDB."
+    systemctl enable mariadb > /dev/null || error "Falha ao habilitar o serviço MariaDB."
 
-    mysql -uroot <<EOF || error "Falha ao configurar o banco de dados MySQL."
+    mysql -uroot <<EOF > /dev/null || error "Falha ao configurar o banco de dados MySQL."
 DELETE FROM mysql.user WHERE User='';
 FLUSH PRIVILEGES;
-CREATE DATABASE IF NOT EXISTS zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
-CREATE USER IF NOT EXISTS 'zabbix'@'localhost' IDENTIFIED BY 'zabbix_password';
+CREATE DATABASE zabbix DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_bin;
+CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '$ZABBIX_DB_PASSWORD';
 GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';
 FLUSH PRIVILEGES;
 EOF
+
     info "Banco de dados configurado com sucesso."
 }
 
 # Instalação do Zabbix
 function install_zabbix() {
     info "Instalando Zabbix..."
-    wget -q https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu24.04_all.deb -O zabbix-release.deb || error "Falha ao baixar o repositório do Zabbix."
-    dpkg -i zabbix-release.deb || error "Falha ao instalar o pacote de repositório do Zabbix."
+    wget -q https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu24.04_all.deb -O zabbix-release.deb > /dev/null || error "Falha ao baixar o repositório do Zabbix."
+    dpkg -i zabbix-release.deb > /dev/null || error "Falha ao instalar o pacote de repositório do Zabbix."
 
-    apt-get update -qq
-    apt-get install -y -qq zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent || error "Falha ao instalar Zabbix."
+    apt-get update -qq > /dev/null
+    apt-get install -y -qq zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent > /dev/null || error "Falha ao instalar Zabbix."
 
-    zcat /usr/share/doc/zabbix-server-mysql/create.sql.gz | mysql -uzabbix -pzabbix_password zabbix || error "Falha ao importar o esquema do banco."
-    sed -i "s/# DBPassword=/DBPassword=zabbix_password/" /etc/zabbix/zabbix_server.conf
-    systemctl restart zabbix-server zabbix-agent apache2
-    systemctl enable zabbix-server zabbix-agent apache2 || error "Falha ao habilitar serviços do Zabbix."
+    zcat /usr/share/doc/zabbix-server-mysql/create.sql.gz | mysql -uzabbix -p$ZABBIX_DB_PASSWORD zabbix > /dev/null || error "Falha ao importar o esquema do banco."
+    sed -i "s/# DBPassword=/DBPassword=$ZABBIX_DB_PASSWORD/" /etc/zabbix/zabbix_server.conf
+    systemctl restart zabbix-server zabbix-agent apache2 > /dev/null
+    systemctl enable zabbix-server zabbix-agent apache2 > /dev/null || error "Falha ao habilitar serviços do Zabbix."
     info "Zabbix instalado com sucesso."
 }
 
 # Instalação do Grafana
 function install_grafana() {
     info "Instalando Grafana..."
-    wget -q https://dl.grafana.com/enterprise/release/grafana-enterprise_8.5.9_amd64.deb -O grafana-enterprise.deb || error "Falha ao baixar o pacote Grafana."
-    dpkg -i grafana-enterprise.deb || error "Falha ao instalar o pacote Grafana."
+    wget -q https://dl.grafana.com/enterprise/release/grafana-enterprise_8.5.9_amd64.deb -O grafana-enterprise.deb > /dev/null || error "Falha ao baixar o pacote Grafana."
+    dpkg -i grafana-enterprise.deb > /dev/null || error "Falha ao instalar o pacote Grafana."
 
-    apt-get update -qq
-    apt-get install -y -qq grafana-enterprise || error "Falha ao instalar Grafana."
+    apt-get update -qq > /dev/null
+    apt-get install -y -qq grafana-enterprise > /dev/null || error "Falha ao instalar Grafana."
 
-    systemctl enable grafana-server
-    systemctl start grafana-server || error "Falha ao iniciar Grafana."
+    systemctl enable grafana-server > /dev/null
+    systemctl start grafana-server > /dev/null || error "Falha ao iniciar Grafana."
 
-    grafana-cli plugins install alexanderzobnin-zabbix-app || error "Falha ao instalar o plugin Zabbix no Grafana."
-    grafana-cli plugins update-all || error "Falha ao atualizar os plugins do Grafana."
-    systemctl restart grafana-server || error "Falha ao reiniciar Grafana."
+    grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null || error "Falha ao instalar o plugin Zabbix no Grafana."
+    grafana-cli plugins update-all > /dev/null || error "Falha ao atualizar os plugins do Grafana."
+    systemctl restart grafana-server > /dev/null || error "Falha ao reiniciar Grafana."
     info "Grafana instalado e plugin Zabbix configurado."
+}
+
+# Exibir informações finais de instalação
+function display_final_info() {
+    info "Instalação concluída com sucesso!"
+    info "============================="
+    info "Acesse o Zabbix através do navegador em: http://$(hostname -I | awk '{print $1}')/zabbix"
+    info "Usuário: Admin"
+    info "Senha: zabbix"
+    info "============================="
+    info "Acesse o Grafana através do navegador em: http://$(hostname -I | awk '{print $1}'):3000"
+    info "Usuário: admin"
+    info "Senha: admin"
+    info "============================="
+    info "Versões dos Sistemas Instalados:"
+    info "Ubuntu $(lsb_release -rs)"
+    info "Zabbix $(zabbix_server -V | head -n 1)"
+    info "Grafana $(grafana-cli -v | head -n 1)"
+    info "MariaDB $(mysql --version)"
 }
 
 # ==== Execução Principal ====
@@ -149,4 +172,5 @@ configure_mysql
 install_zabbix
 install_grafana
 
-info "Instalação concluída com sucesso!"
+# Exibir informações finais após a instalação
+display_final_info
