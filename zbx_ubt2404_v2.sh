@@ -76,7 +76,7 @@ function clean_previous_installations() {
 
     # Remover pacotes e configurações residuais
     info "Removendo pacotes relacionados..."
-    apt-get purge -y -qq zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana-enterprise mariadb-server > /dev/null || error "Falha ao remover pacotes."
+    apt-get purge -y -qq zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-agent grafana mariadb-server > /dev/null || error "Falha ao remover pacotes."
     apt-get autoremove -y -qq > /dev/null || error "Falha ao remover dependências desnecessárias."
     apt-get autoclean -qq > /dev/null || error "Falha ao limpar pacotes antigos."
 
@@ -123,14 +123,17 @@ function install_zabbix() {
     info "Zabbix instalado com sucesso."
 }
 
-# Instalação do Grafana
+# Instalação do Grafana (Versão Open Source)
 function install_grafana() {
     info "Instalando Grafana..."
-    wget -q https://dl.grafana.com/enterprise/release/grafana-enterprise_8.5.9_amd64.deb -O grafana-enterprise.deb > /dev/null || error "Falha ao baixar o pacote Grafana."
-    dpkg -i grafana-enterprise.deb > /dev/null || error "Falha ao instalar o pacote Grafana."
 
-    apt-get update -qq > /dev/null
-    apt-get install -y -qq grafana-enterprise > /dev/null || error "Falha ao instalar Grafana."
+    # Adicionar repositório Grafana e chave GPG
+    apt-get install -y -qq software-properties-common > /dev/null || error "Falha ao instalar dependências necessárias."
+    add-apt-repository "deb https://packages.grafana.com/oss/deb stable main" > /dev/null || error "Falha ao adicionar o repositório Grafana."
+    wget -q -O - https://packages.grafana.com/gpg.key | apt-key add - > /dev/null || error "Falha ao adicionar a chave GPG do Grafana."
+    
+    apt-get update -qq > /dev/null || error "Falha ao atualizar os repositórios."
+    apt-get install -y -qq grafana > /dev/null || error "Falha ao instalar Grafana."
 
     systemctl enable grafana-server > /dev/null
     systemctl start grafana-server > /dev/null || error "Falha ao iniciar Grafana."
