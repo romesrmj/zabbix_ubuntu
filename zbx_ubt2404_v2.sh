@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # ===========================
-# Instalação Automática: Zabbix + Grafana
-# Compatível com Ubuntu Server 24.04 (Minimal)
+# Instalação Automática: Zabbix + Grafana (Open-Source)
 # ===========================
 
 LOG_FILE="/var/log/zabbix_grafana_install.log"
@@ -125,23 +124,27 @@ function install_zabbix() {
 
 # Instalação do Grafana (Versão Open Source)
 function install_grafana() {
-    info "Instalando Grafana..."
+    info "Instalando Grafana (Versão Open-Source)..."
 
     # Adicionar repositório Grafana e chave GPG
     apt-get install -y -qq software-properties-common > /dev/null || error "Falha ao instalar dependências necessárias."
-    add-apt-repository "deb https://packages.grafana.com/oss/deb stable main" > /dev/null || error "Falha ao adicionar o repositório Grafana."
     wget -q -O - https://packages.grafana.com/gpg.key | apt-key add - > /dev/null || error "Falha ao adicionar a chave GPG do Grafana."
-    
+    echo "deb https://packages.grafana.com/oss/deb stable main" | tee -a /etc/apt/sources.list.d/grafana.list > /dev/null || error "Falha ao adicionar o repositório Grafana."
+
+    # Atualizar pacotes
     apt-get update -qq > /dev/null || error "Falha ao atualizar os repositórios."
-    apt-get install -y -qq grafana > /dev/null || error "Falha ao instalar Grafana."
 
+    # Instalar Grafana
+    apt-get install -y -qq grafana > /dev/null || error "Falha ao instalar o Grafana."
+
+    # Iniciar e habilitar o Grafana
     systemctl enable grafana-server > /dev/null
-    systemctl start grafana-server > /dev/null || error "Falha ao iniciar Grafana."
+    systemctl start grafana-server > /dev/null || error "Falha ao iniciar o serviço Grafana."
 
+    # Instalar o plugin Zabbix no Grafana
     grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null || error "Falha ao instalar o plugin Zabbix no Grafana."
-    grafana-cli plugins update-all > /dev/null || error "Falha ao atualizar os plugins do Grafana."
-    systemctl restart grafana-server > /dev/null || error "Falha ao reiniciar Grafana."
-    info "Grafana instalado e plugin Zabbix configurado."
+    systemctl restart grafana-server > /dev/null || error "Falha ao reiniciar o Grafana."
+    info "Grafana instalado com sucesso e plugin Zabbix configurado."
 }
 
 # Exibir informações finais de instalação
