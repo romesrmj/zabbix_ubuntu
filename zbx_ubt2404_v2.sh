@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ===========================
-# Instalação Automática: Zabbix + Grafana (Open-Source)
+# Instalação Automática: Zabbix + Grafana Enterprise
 # ===========================
 
 LOG_FILE="/var/log/zabbix_grafana_install.log"
@@ -122,20 +122,18 @@ function install_zabbix() {
     info "Zabbix instalado com sucesso."
 }
 
-# Instalação do Grafana (Versão Open Source)
-function install_grafana() {
-    info "Instalando Grafana (Versão Open-Source)..."
+# Instalação do Grafana Enterprise (Versão 9.5.3)
+function install_grafana_enterprise() {
+    info "Instalando Grafana Enterprise 9.5.3..."
 
-    # Adicionar repositório Grafana e chave GPG
-    apt-get install -y -qq software-properties-common > /dev/null || error "Falha ao instalar dependências necessárias."
-    wget -q -O - https://packages.grafana.com/gpg.key | apt-key add - > /dev/null || error "Falha ao adicionar a chave GPG do Grafana."
-    echo "deb https://packages.grafana.com/oss/deb stable main" | tee -a /etc/apt/sources.list.d/grafana.list > /dev/null || error "Falha ao adicionar o repositório Grafana."
+    # Baixar o pacote Grafana Enterprise
+    wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.5.3_amd64.deb -O /tmp/grafana-enterprise.deb || error "Falha ao baixar o pacote do Grafana Enterprise."
 
-    # Atualizar pacotes
-    apt-get update -qq > /dev/null || error "Falha ao atualizar os repositórios."
+    # Instalar o pacote Grafana Enterprise
+    dpkg -i /tmp/grafana-enterprise.deb > /dev/null || error "Falha ao instalar o Grafana Enterprise."
 
-    # Instalar Grafana
-    apt-get install -y -qq grafana > /dev/null || error "Falha ao instalar o Grafana."
+    # Resolver dependências, se necessário
+    apt-get install -f -y -qq > /dev/null || error "Falha ao resolver dependências do Grafana."
 
     # Iniciar e habilitar o Grafana
     systemctl enable grafana-server > /dev/null
@@ -144,7 +142,7 @@ function install_grafana() {
     # Instalar o plugin Zabbix no Grafana
     grafana-cli plugins install alexanderzobnin-zabbix-app > /dev/null || error "Falha ao instalar o plugin Zabbix no Grafana."
     systemctl restart grafana-server > /dev/null || error "Falha ao reiniciar o Grafana."
-    info "Grafana instalado com sucesso e plugin Zabbix configurado."
+    info "Grafana Enterprise instalado com sucesso e plugin Zabbix configurado."
 }
 
 # Exibir informações finais de instalação
@@ -176,7 +174,7 @@ install_network_tools
 clean_previous_installations
 configure_mysql
 install_zabbix
-install_grafana
+install_grafana_enterprise
 
 # Exibir informações finais após a instalação
 display_final_info
