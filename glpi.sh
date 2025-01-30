@@ -7,7 +7,8 @@ DB_PASS="senha_segura"
 GLPI_PATH="/var/www/html/glpi"
 APACHE_CONF="/etc/apache2/sites-available/glpi.conf"
 LOG_FILE="/var/log/glpi_install.log"
-GLPI_ARCHIVE="/tmp/glpi.tgz"
+GLPI_ARCHIVE="/tmp/glpi-10.0.15.tgz"
+GLPI_URL="https://github.com/glpi-project/glpi/releases/download/10.0.15/glpi-10.0.15.tgz"
 
 # Função para verificar erro
 check_error() {
@@ -24,7 +25,7 @@ check_error "Falha ao atualizar pacotes."
 
 # Instalando dependências essenciais
 echo "Instalando dependências..."
-apt install -y apache2 mariadb-server php php-mysql php-curl php-gd php-intl php-xml php-zip php-bz2 php-mbstring php-ldap php-apcu php-cli php-common php-soap php-xmlrpc wget unzip curl &>> "$LOG_FILE"
+apt install -y apache2 mariadb-server php php-mysql php-curl php-gd php-intl php-xml php-zip php-bz2 php-mbstring php-ldap php-apcu php-cli php-common php-soap php-xmlrpc wget unzip curl jq &>> "$LOG_FILE"
 check_error "Falha ao instalar dependências."
 
 # Configurando banco de dados
@@ -38,20 +39,16 @@ check_error "Falha ao criar usuário do banco de dados."
 mysql -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" &>> "$LOG_FILE"
 check_error "Falha ao conceder privilégios ao usuário do banco de dados."
 
-# Obtendo a versão mais recente do GLPI
-echo "Obtendo a versão mais recente do GLPI..."
-GLPI_LATEST=$(curl -sL https://api.github.com/repos/glpi-project/glpi/releases/latest | grep "browser_download_url" | grep ".tgz" | cut -d '"' -f 4)
-check_error "Falha ao obter a versão mais recente do GLPI."
-
-echo "Baixando GLPI versão mais recente..."
-wget -O "$GLPI_ARCHIVE" "$GLPI_LATEST" &>> "$LOG_FILE"
+# Baixando GLPI versão 10.0.15
+echo "Baixando GLPI versão 10.0.15..."
+wget -O "$GLPI_ARCHIVE" "$GLPI_URL" &>> "$LOG_FILE"
 check_error "Falha ao baixar o GLPI. Verifique sua conexão com a internet."
 
 echo "Extraindo GLPI..."
-tar -xzf "$GLPI_ARCHIVE" -C /var/www/html/ &>> "$LOG_FILE"
+tar -xvzf "$GLPI_ARCHIVE" -C /var/www/html/ &>> "$LOG_FILE"
 check_error "Falha ao extrair o GLPI."
 
-mv /var/www/html/glpi-* "$GLPI_PATH"
+mv /var/www/html/glpi-10.0.15 "$GLPI_PATH"
 check_error "Falha ao mover arquivos do GLPI."
 
 # Configurando permissões
