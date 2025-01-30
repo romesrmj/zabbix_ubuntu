@@ -25,7 +25,7 @@ check_error "Falha ao atualizar pacotes."
 
 # Instalando dependências essenciais
 echo "Instalando dependências..."
-apt install -y apache2 mariadb-server php php-mysql php-curl php-gd php-intl php-xml php-zip php-bz2 php-mbstring php-ldap php-apcu php-cli php-common php-soap php-xmlrpc wget unzip curl jq &>> "$LOG_FILE"
+apt install -y apache2 mariadb-server php php-mysql php-curl php-gd php-intl php-xml php-zip php-bz2 php-mbstring php-ldap php-apcu php-cli php-common php-soap php-xmlrpc wget unzip curl jq libapache2-mod-php &>> "$LOG_FILE"
 check_error "Falha ao instalar dependências."
 
 # Configurando banco de dados
@@ -82,19 +82,28 @@ check_error "Falha ao configurar permissões."
 echo "Configurando Apache..."
 cat > "$APACHE_CONF" <<EOF
 <VirtualHost *:80>
-    DocumentRoot "$GLPI_PATH/public"
-    <Directory "$GLPI_PATH/public">
+    ServerAdmin admin@seu-dominio.com
+    DocumentRoot "$GLPI_PATH"
+    <Directory "$GLPI_PATH">
+        Options FollowSymLinks
         AllowOverride All
         Require all granted
     </Directory>
+
     ErrorLog \${APACHE_LOG_DIR}/glpi_error.log
     CustomLog \${APACHE_LOG_DIR}/glpi_access.log combined
+
+    <FilesMatch ".php$">
+        SetHandler "proxy:unix:/var/run/php/php7.4-fpm.sock|fcgi://localhost/"
+    </FilesMatch>
 </VirtualHost>
 EOF
 
 ln -s "$APACHE_CONF" /etc/apache2/sites-enabled/
 a2enmod rewrite &>> "$LOG_FILE"
-check_error "Falha ao ativar módulo rewrite."
+a2enmod proxy_fcgi setenvif &>> "$LOG_FILE"
+a2enconf php7.4-fpm &>> "$LOG_FILE"
+check_error "Falha ao configurar Apache."
 
 systemctl restart apache2 &>> "$LOG_FILE"
 check_error "Falha ao reiniciar Apache."
