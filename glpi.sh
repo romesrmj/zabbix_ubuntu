@@ -7,7 +7,8 @@ DB_PASS="senha_segura"
 GLPI_PATH="/var/www/html/glpi"
 APACHE_CONF="/etc/apache2/sites-available/glpi.conf"
 LOG_FILE="/var/log/glpi_install.log"
-GITHUB_REPO="https://github.com/glpi-project/glpi.git"
+GLPI_URL="https://github.com/glpi-project/glpi/releases/latest/download/glpi.tgz"
+GLPI_ARCHIVE="/tmp/glpi.tgz"
 
 # Função para verificar erro
 check_error() {
@@ -24,13 +25,8 @@ check_error "Falha ao atualizar pacotes."
 
 # Instalando dependências essenciais
 echo "Instalando dependências..."
-apt install -y apache2 mariadb-server php php-mysql php-curl php-gd php-intl php-xml php-zip php-bz2 php-mbstring php-ldap php-apcu php-cli php-common php-soap php-xmlrpc git unzip curl &>> "$LOG_FILE"
+apt install -y apache2 mariadb-server php php-mysql php-curl php-gd php-intl php-xml php-zip php-bz2 php-mbstring php-ldap php-apcu php-cli php-common php-soap php-xmlrpc wget unzip curl &>> "$LOG_FILE"
 check_error "Falha ao instalar dependências."
-
-# Verificando conectividade com GitHub
-echo "Verificando conectividade com GitHub..."
-ping -c 3 github.com &>> "$LOG_FILE"
-check_error "Falha ao conectar-se ao GitHub. Verifique sua conexão com a internet."
 
 # Configurando banco de dados
 echo "Configurando banco de dados..."
@@ -46,8 +42,15 @@ check_error "Falha ao conceder privilégios ao usuário do banco de dados."
 # Baixando GLPI
 echo "Baixando GLPI..."
 rm -rf "$GLPI_PATH"
-git clone --branch master --depth 1 "$GITHUB_REPO" "$GLPI_PATH" &>> "$LOG_FILE"
-check_error "Falha ao clonar repositório do GLPI. Verifique se o Git está instalado e se há conexão com a internet."
+wget -O "$GLPI_ARCHIVE" "$GLPI_URL" &>> "$LOG_FILE"
+check_error "Falha ao baixar o GLPI. Verifique sua conexão com a internet."
+
+echo "Extraindo GLPI..."
+tar -xzf "$GLPI_ARCHIVE" -C /var/www/html/ &>> "$LOG_FILE"
+check_error "Falha ao extrair o GLPI."
+
+mv /var/www/html/glpi-* "$GLPI_PATH"
+check_error "Falha ao mover arquivos do GLPI."
 
 # Configurando permissões
 echo "Ajustando permissões..."
