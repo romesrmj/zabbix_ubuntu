@@ -44,9 +44,21 @@ echo "Baixando GLPI versão 10.0.15..."
 wget -O "$GLPI_ARCHIVE" "$GLPI_URL" &>> "$LOG_FILE"
 check_error "Falha ao baixar o GLPI. Verifique sua conexão com a internet."
 
+# Verificando se o arquivo foi baixado
+if [ ! -f "$GLPI_ARCHIVE" ]; then
+    echo "Erro: O arquivo de instalação do GLPI não foi encontrado." | tee -a "$LOG_FILE"
+    exit 1
+fi
+
 echo "Extraindo GLPI..."
 tar -xvzf "$GLPI_ARCHIVE" -C /var/www/html/ &>> "$LOG_FILE"
 check_error "Falha ao extrair o GLPI."
+
+# Verificando se o diretório foi extraído corretamente
+if [ ! -d "/var/www/html/glpi-10.0.15" ]; then
+    echo "Erro: O diretório extraído do GLPI não foi encontrado." | tee -a "$LOG_FILE"
+    exit 1
+fi
 
 mv /var/www/html/glpi-10.0.15 "$GLPI_PATH"
 check_error "Falha ao mover arquivos do GLPI."
