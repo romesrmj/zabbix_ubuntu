@@ -3,6 +3,8 @@ instalação automatica do zabbix 7Lts + Grafana V 4.5.6
 
 # Baixe o pacote
 ## New Verson:
+bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx_ubt2404_nw.sh)
+
 bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx_ubt2404.sh)
 
 bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx_ubt2404_v2.sh)
