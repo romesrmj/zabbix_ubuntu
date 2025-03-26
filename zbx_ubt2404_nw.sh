@@ -1,161 +1,162 @@
 #!/bin/bash
 
-# Verificação de privilégios
-if [ "$EUID" -ne 0 ]; then
-  echo "Execute como root: sudo ./deploy_zabbix.sh"
-  exit 1
-fi
+# Configuração profissional para ambientes automatizados
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export TERM=linux
 
 # Configurações globais
-ZABBIX_CONF="/etc/zabbix/zabbix_server.conf"
 LOG_FILE="/var/log/zabbix_deploy.log"
-TIMESTAMP=$(date +"%Y-%m-%d %T")
+ZABBIX_CONF="/etc/zabbix/zabbix_server.conf"
+DOMAIN=""
+ZABBIX_USER=""
+ZABBIX_PASS=""
 
-# Funções principais
-init_setup() {
-  echo "[$TIMESTAMP] Iniciando instalação" > $LOG_FILE
-  apt-get update -qq >> $LOG_FILE
+# Função de log detalhada
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
-show_header() {
+# Função para saída em caso de erro
+error_exit() {
+  log "ERRO: $1"
+  exit 1
+}
+
+# Configuração inicial
+setup_environment() {
+  log "Iniciando configuração do ambiente"
+  echo "zabbix-frontend-php zabbix-frontend-php/timezone select UTC" | debconf-set-selections
+  echo "zabbix-server-mysql zabbix-server-mysql/dbconfig-install boolean true" | debconf-set-selections
+  echo "console-setup console-setup/charmap47 select UTF-8" | debconf-set-selections
+}
+
+# Coleta de informações
+get_user_input() {
   clear
   echo "=============================================="
-  echo " $1"
+  echo " CONFIGURAÇÃO INICIAL - ZABBIX 7.0 + GRAFANA"
   echo "=============================================="
-  sleep 2
-}
-
-get_credentials() {
-  show_header "CONFIGURAÇÃO INICIAL"
   
-  while true; do
-    read -p "Domínio principal (ex: monitor.example.com): " DOMAIN
-    [[ -n "$DOMAIN" ]] && break
-    echo "Domínio inválido!"
+  while [ -z "$DOMAIN" ]; do
+    read -p "Digite o domínio completo (ex: monitor.empresa.com): " DOMAIN
   done
 
-  while true; do
-    read -p "Usuário admin Zabbix: " ZABBIX_USER
-    [[ -n "$ZABBIX_USER" ]] && break
-    echo "Usuário não pode ser vazio!"
+  while [ -z "$ZABBIX_USER" ]; do
+    read -p "Digite o usuário admin para Zabbix: " ZABBIX_USER
   done
 
-  while true; do
-    read -sp "Senha para $ZABBIX_USER: " ZABBIX_PASS
-    [[ -n "$ZABBIX_PASS" ]] && break
-    echo -e "\nSenha inválida!"
+  while [ -z "$ZABBIX_PASS" ]; do
+    read -sp "Digite a senha para $ZABBIX_USER: " ZABBIX_PASS
+    echo
   done
-  echo
 }
 
-setup_snmp() {
-  show_header "ATUALIZANDO SNMP"
-  apt-get install -qq -y snmp snmpd snmp-mibs-downloader >> $LOG_FILE
-  systemctl restart snmpd >> $LOG_FILE
-}
-
+# Instalação do Zabbix 7.0 LTS
 install_zabbix() {
-  show_header "INSTALANDO ZABBIX 7.0 LTS"
+  log "Iniciando instalação do Zabbix 7.0 LTS"
   
-  # Repositório e pacotes
-  wget -q https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb
-  dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb >> $LOG_FILE
-  apt-get update -qq >> $LOG_FILE
-  
-  # Instalação
-  apt-get install -qq -y \
+  # Adicionar repositório
+  wget -q https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb || error_exit "Falha ao baixar pacote do Zabbix"
+  dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb || error_exit "Falha ao instalar repositório"
+
+  # Atualizar e instalar pacotes
+  apt-get update -qqy || error_exit "Falha na atualização de pacotes"
+  apt-get install -qqy \
     zabbix-server-mysql \
     zabbix-frontend-php \
     zabbix-apache-conf \
     zabbix-sql-scripts \
-    zabbix-agent >> $LOG_FILE
+    zabbix-agent || error_exit "Falha na instalação de pacotes do Zabbix"
 
-  # Configuração MySQL
+  # Configurar banco de dados
   DB_PASS=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9!@#$%^&*()_+-=')
-  mysql -e "CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"
-  mysql -e "CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-  mysql -e "GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';"
-  zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -u zabbix -p"${DB_PASS}" zabbix >> $LOG_FILE
+  mysql -e "CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;" || error_exit "Falha ao criar banco de dados"
+  mysql -e "CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '${DB_PASS}';" || error_exit "Falha ao criar usuário do banco"
+  mysql -e "GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';" || error_exit "Falha ao conceder privilégios"
+  zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -u zabbix -p"${DB_PASS}" zabbix || error_exit "Falha ao importar schema"
 
-  # Otimização
-  declare -A configs=(
-    ["DBHost"]="localhost"
-    ["DBPassword"]="$DB_PASS"
-    ["StartPollers"]="8"
-    ["StartTrappers"]="5"
-    ["CacheSize"]="512M"
-    ["HistoryCacheSize"]="256M"
-  )
-  for key in "${!configs[@]}"; do
-    sed -i "s/^# $key=.*/$key=${configs[$key]}/" $ZABBIX_CONF
-  done
+  # Configurar arquivo do Zabbix Server
+  cat >> "$ZABBIX_CONF" <<EOF
+DBHost=localhost
+DBName=zabbix
+DBUser=zabbix
+DBPassword=$DB_PASS
+StartPollers=8
+StartTrappers=5
+CacheSize=512M
+HistoryCacheSize=256M
+EOF
 
-  systemctl restart zabbix-server zabbix-agent apache2 >> $LOG_FILE
+  systemctl restart zabbix-server zabbix-agent apache2 || error_exit "Falha ao reiniciar serviços"
+  log "Zabbix configurado com sucesso"
 }
 
-setup_grafana() {
-  show_header "INSTALANDO GRAFANA"
+# Instalação do Grafana
+install_grafana() {
+  log "Iniciando instalação do Grafana"
   
-  # Repositório
+  # Adicionar repositório seguro
   gpg --dearmor <<EOF > /usr/share/keyrings/grafana.gpg
 -----BEGIN PGP PUBLIC KEY BLOCK-----
-... [conteúdo real da chave GPG] ...
+... [inserir chave GPG real aqui] ...
 -----END PGP PUBLIC KEY BLOCK-----
 EOF
 
   echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main" > /etc/apt/sources.list.d/grafana.list
 
-  # Instalação
-  apt-get update -qq >> $LOG_FILE
-  apt-get install -qq -y grafana zabbix-plugin >> $LOG_FILE
-  
-  # Segurança
+  # Instalar Grafana
+  apt-get update -qqy || error_exit "Falha na atualização de repositórios do Grafana"
+  apt-get install -qqy grafana zabbix-plugin || error_exit "Falha na instalação do Grafana"
+
+  # Configurar senha admin
   GRAFANA_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9!@#$%^&*()_+-=')
-  grafana-cli admin reset-admin-password "$GRAFANA_PASS" >> $LOG_FILE
-  systemctl start grafana-server >> $LOG_FILE
+  grafana-cli admin reset-admin-password "$GRAFANA_PASS" || error_exit "Falha ao configurar senha do Grafana"
+  
+  systemctl start grafana-server || error_exit "Falha ao iniciar Grafana"
+  log "Grafana instalado com sucesso"
 }
 
-setup_https() {
-  show_header "CONFIGURANDO HTTPS"
+# Configurar HTTPS
+configure_https() {
+  log "Configurando certificado SSL"
   
-  # Certbot
-  apt-get install -qq -y certbot python3-certbot-apache >> $LOG_FILE
+  apt-get install -qqy certbot python3-certbot-apache || error_exit "Falha ao instalar Certbot"
+  
   certbot --apache --non-interactive --agree-tos --redirect \
     --email "admin@$DOMAIN" \
     -d "$DOMAIN" \
-    -d "grafana.$DOMAIN" >> $LOG_FILE
+    -d "grafana.$DOMAIN" || error_exit "Falha ao obter certificado SSL"
 
-  # Firewall
-  ufw allow "Apache Full" >> $LOG_FILE
-  ufw reload >> $LOG_FILE
+  # Configurar virtual hosts
+  a2enmod ssl proxy proxy_http || error_exit "Falha ao ativar módulos Apache"
+  systemctl reload apache2 || error_exit "Falha ao recarregar Apache"
+  log "HTTPS configurado com sucesso"
 }
 
+# Finalização
 finalize() {
-  show_header "FINALIZANDO"
-  
-  # Permissões
-  chown -R zabbix:zabbix /etc/zabbix
-  chmod 640 $ZABBIX_CONF
-
-  # Relatórios
-  echo -e "\n\n✅ INSTALAÇÃO COMPLETA"
+  clear
   echo "=============================================="
-  echo "🌐 Zabbix: https://$DOMAIN/zabbix"
-  echo "👤 Usuário: $ZABBIX_USER"
-  echo "🔑 Senha: ********"
+  echo " INSTALAÇÃO CONCLUÍDA COM SUCESSO"
+  echo "=============================================="
+  echo " URL Zabbix:     https://$DOMAIN/zabbix"
+  echo " Usuário:        $ZABBIX_USER"
+  echo " Senha:          ********"
   echo "----------------------------------------------"
-  echo "📊 Grafana: https://grafana.$DOMAIN"
-  echo "👤 Usuário: admin"
-  echo "🔑 Senha: $GRAFANA_PASS"
+  echo " URL Grafana:    https://grafana.$DOMAIN"
+  echo " Usuário:        admin"
+  echo " Senha:          $GRAFANA_PASS"
   echo "=============================================="
-  echo "🔍 Log completo: tail -f $LOG_FILE"
+  echo " Log completo disponível em: $LOG_FILE"
 }
 
 # Fluxo principal
-init_setup
-get_credentials
-setup_snmp
-install_zabbix
-setup_grafana
-setup_https
-finalize
+{
+  setup_environment
+  get_user_input
+  install_zabbix
+  install_grafana
+  configure_https
+  finalize
+} > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE" >&2)
