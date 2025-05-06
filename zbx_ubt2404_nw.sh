@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full deployment script for Zabbix 6.4 and Grafana with APACHE on Ubuntu 24.04
+# Full deployment script for Zabbix 6.0 and Grafana with APACHE on Ubuntu 24.04
 
 # Exit on error
 set -e
@@ -9,7 +9,7 @@ LOG_FILE="/var/log/zabbix-grafana-deployment.log"
 exec > >(tee -i $LOG_FILE)
 exec 2>&1
 
-echo "Starting Zabbix 6.4 with APACHE and Grafana deployment on Ubuntu 24.04 at $(date)"
+echo "Starting Zabbix 6.0 with APACHE and Grafana deployment on Ubuntu 24.04 at $(date)"
 echo "----------------------------------------------"
 
 #!/bin/bash
@@ -26,13 +26,15 @@ apt-get install -y \
   ca-certificates \
   lsb-release \
   python3-pip \
-  net-snmp \
   snmp \
-  snmp-mibs-downloader \
-  libsnmp-dev
+  snmpd \
+  libsnmp-dev \
+  snmp-mibs-downloader
 
 # Download MIBs
-download-mibs
+if command -v download-mibs &> /dev/null; then
+  download-mibs
+fi
 
 # Enable MIBs
 if [ -f "/etc/snmp/snmp.conf" ]; then
@@ -47,8 +49,8 @@ echo "Base packages installed successfully on Ubuntu 24.04"
 
 #!/bin/bash
 # Install Zabbix repository
-wget https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-4+ubuntu24.04_all.deb
-dpkg -i zabbix-release_6.4-4+ubuntu24.04_all.deb
+wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu24.04_all.deb
+dpkg -i zabbix-release_6.0-4+ubuntu24.04_all.deb
 apt-get update
 
 # Install Zabbix server, frontend, and agent
@@ -119,7 +121,7 @@ elif command -v rc-service >/dev/null 2>&1; then
   rc-update add apache2 default || rc-update add httpd default
 fi
 
-echo "Zabbix 6.4 installation with APACHE completed successfully on Ubuntu 24.04"
+echo "Zabbix 6.0 installation with APACHE completed successfully on Ubuntu 24.04"
 
 
 #!/bin/bash
@@ -179,7 +181,7 @@ echo "Creating API user in Zabbix for Grafana integration..."
 # In a real deployment, this would be done via the Zabbix API
 echo "ZABBIX_API_KEY=your_zabbix_api_key" >> /etc/environment
 
-echo "Zabbix 6.4 and Grafana integration completed on Ubuntu 24.04"
+echo "Zabbix 6.0 and Grafana integration completed on Ubuntu 24.04"
 
 
 #!/bin/bash
@@ -273,6 +275,6 @@ echo "Security hardening with APACHE web server completed on Ubuntu 24.04"
 
 echo "----------------------------------------------"
 echo "Deployment completed successfully on $(date)"
-echo "Zabbix 6.4 with APACHE is accessible at: http://srvzbx01:80/"
+echo "Zabbix 6.0 with APACHE is accessible at: http://srvzbx01:80/"
 echo "Grafana is accessible at: http://srvzbx01:3000/"
 echo "Check the log file at $LOG_FILE for more details"
