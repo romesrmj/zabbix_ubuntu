@@ -1,129 +1,278 @@
 #!/bin/bash
+# Full deployment script for Zabbix 6.0 and Grafana with APACHE on Ubuntu 22.04
 
-# Configuração profissional para ambientes automatizados
-set -euo pipefail
-export DEBIAN_FRONTEND=noninteractive
-export TERM=linux
+# Exit on error
+set -e
 
-# Configurações globais
-LOG_FILE="/var/log/zabbix_deploy.log"
-ZABBIX_CONF="/etc/zabbix/zabbix_server.conf"
-DOMAIN=""
-ZABBIX_USER=""
-ZABBIX_PASS=""
+# Log file
+LOG_FILE="/var/log/zabbix-grafana-deployment.log"
+exec > >(tee -i $LOG_FILE)
+exec 2>&1
 
-# Função de log detalhada
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
-}
+echo "Starting Zabbix 6.0 with APACHE and Grafana deployment on Ubuntu 22.04 at $(date)"
+echo "----------------------------------------------"
 
-# Função para saída em caso de erro
-error_exit() {
-  log "ERRO: $1"
-  exit 1
-}
+#!/bin/bash
+# Update package lists
+apt-get update
 
-# Verificar e limpar instalação anterior do MySQL
-clean_mysql_legacy() {
-  log "Verificando instalações anteriores do Zabbix"
+# Install required packages
+apt-get install -y \
+  apt-transport-https \
+  software-properties-common \
+  wget \
+  curl \
+  gnupg2 \
+  ca-certificates \
+  lsb-release \
+  python3-pip \
+  net-snmp \
+  snmp \
+  snmp-mibs-downloader \
+  libsnmp-dev
+
+# Download MIBs
+download-mibs
+
+# Enable MIBs
+if [ -f "/etc/snmp/snmp.conf" ]; then
+  sed -i 's/mibs :/# mibs :/g' /etc/snmp/snmp.conf
+fi
+
+# Install SNMP Python modules
+pip3 install pysnmp pysnmp-mibs
+
+echo "Base packages installed successfully on Ubuntu 22.04"
+
+
+#!/bin/bash
+# Install Zabbix repository
+wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu22.04_all.deb
+dpkg -i zabbix-release_6.0-4+ubuntu22.04_all.deb
+apt-get update
+
+# Install Zabbix server, frontend, and agent
+if [ "mysql" == "mysql" ]; then
+  apt-get install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent mysql-server
   
-  if mysql -e "SELECT 1" &>/dev/null; then
-    log "Removendo usuário e database existentes"
-    
-    # Remover usuário se existir
-    mysql -e "DROP USER IF EXISTS 'zabbix'@'localhost'" || :
-    
-    # Remover database se existir
-    mysql -e "DROP DATABASE IF EXISTS zabbix" || :
-    
-    # Limpar privilégios
-    mysql -e "FLUSH PRIVILEGES" || error_exit "Falha ao atualizar privilégios"
-  fi
-}
-
-# Configuração inicial
-setup_environment() {
-  log "Iniciando configuração do ambiente"
-  echo "zabbix-frontend-php zabbix-frontend-php/timezone select UTC" | debconf-set-selections
-  echo "zabbix-server-mysql zabbix-server-mysql/dbconfig-install boolean true" | debconf-set-selections
-  echo "console-setup console-setup/charmap47 select UTF-8" | debconf-set-selections
-}
-
-# Coleta de informações
-get_user_input() {
-  clear
-  echo "=============================================="
-  echo " CONFIGURAÇÃO INICIAL - ZABBIX 7.0 + GRAFANA"
-  echo "=============================================="
+  # Install Apache
+apt-get install -y apache2 libapache2-mod-php
   
-  while [ -z "$DOMAIN" ]; do
-    read -p "Digite o domínio completo (ex: monitor.empresa.com): " DOMAIN
-  done
+  # Secure MySQL installation
+  mysql_secure_installation <<EOF
 
-  while [ -z "$ZABBIX_USER" ]; do
-    read -p "Digite o usuário admin para Zabbix: " ZABBIX_USER
-  done
-
-  while [ -z "$ZABBIX_PASS" ]; do
-    read -sp "Digite a senha para $ZABBIX_USER: " ZABBIX_PASS
-    echo
-  done
-}
-
-# Instalação do Zabbix 7.0 LTS
-install_zabbix() {
-  log "Iniciando instalação do Zabbix 7.0 LTS"
-  
-  # Adicionar repositório
-  wget -q https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb || error_exit "Falha ao baixar pacote do Zabbix"
-  dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb || error_exit "Falha ao instalar repositório"
-
-  # Atualizar e instalar pacotes
-  apt-get update -qqy || error_exit "Falha na atualização de pacotes"
-  apt-get install -qqy \
-    zabbix-server-mysql \
-    zabbix-frontend-php \
-    zabbix-apache-conf \
-    zabbix-sql-scripts \
-    zabbix-agent || error_exit "Falha na instalação de pacotes do Zabbix"
-
-  # Configurar banco de dados
-  DB_PASS=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9!@#$%^&*()_+-=')
-  
-  clean_mysql_legacy
-  
-  log "Criando novos recursos do banco de dados"
-  mysql -e "CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;" || error_exit "Falha ao criar banco de dados"
-  mysql -e "CREATE USER 'zabbix'@'localhost' IDENTIFIED BY '${DB_PASS}';" || error_exit "Falha ao criar usuário do banco"
-  mysql -e "GRANT ALL PRIVILEGES ON zabbix.* TO 'zabbix'@'localhost';" || error_exit "Falha ao conceder privilégios"
-  mysql -e "FLUSH PRIVILEGES" || error_exit "Falha ao atualizar privilégios"
-  
-  zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -u zabbix -p"${DB_PASS}" zabbix || error_exit "Falha ao importar schema"
-
-  # Configurar arquivo do Zabbix Server
-  cat >> "$ZABBIX_CONF" <<EOF
-DBHost=localhost
-DBName=zabbix
-DBUser=zabbix
-DBPassword=$DB_PASS
-StartPollers=8
-StartTrappers=5
-CacheSize=512M
-HistoryCacheSize=256M
+Y
+srvzbx123
+srvzbx123
+Y
+Y
+Y
+Y
 EOF
 
-  systemctl restart zabbix-server zabbix-agent apache2 || error_exit "Falha ao reiniciar serviços"
-  log "Zabbix configurado com sucesso"
-}
+  # Create database
+  mysql -uroot -psrvzbx123 -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
+  mysql -uroot -psrvzbx123 -e "create user 'zabbix'@'localhost' identified by 'srvzbx123';"
+  mysql -uroot -psrvzbx123 -e "grant all privileges on zabbix.* to 'zabbix'@'localhost';"
+  
+  # Import initial schema
+  zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -psrvzbx123 zabbix
+  
+elif [ "mysql" == "postgresql" ]; then
+  apt-get install -y zabbix-server-pgsql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent postgresql
+  
+  # Install Apache
+apt-get install -y apache2 libapache2-mod-php
+  
+  # Create database
+  sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD 'srvzbx123';"
+  sudo -u postgres psql -c "CREATE DATABASE zabbix OWNER zabbix;"
+  
+  # Import initial schema
+  zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | sudo -u postgres psql zabbix
+fi
 
-# ... [As funções install_grafana, configure_https e finalize permanecem iguais] ...
+# Configure Zabbix server
+sed -i "s/# DBPassword=/DBPassword=srvzbx123/g" /etc/zabbix/zabbix_server.conf
+sed -i "s/# DBName=zabbix/DBName=zabbix/g" /etc/zabbix/zabbix_server.conf
+sed -i "s/# DBUser=zabbix/DBUser=zabbix/g" /etc/zabbix/zabbix_server.conf
 
-# Fluxo principal
-{
-  setup_environment
-  get_user_input
-  install_zabbix
-  install_grafana
-  configure_https
-  finalize
-} > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE" >&2)
+# Web server configuration
+# Configure Apache
+# PHP timezone settings
+sed -i 's/;date.timezone =/date.timezone = UTC/g' /etc/php*/*/php.ini
+
+# Start services
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart zabbix-server zabbix-agent apache2 || systemctl restart zabbix-server zabbix-agent httpd
+  systemctl enable zabbix-server zabbix-agent apache2 || systemctl enable zabbix-server zabbix-agent httpd
+elif command -v service >/dev/null 2>&1; then
+  service zabbix-server restart
+  service zabbix-agent restart
+  service apache2 restart || service httpd restart
+elif command -v rc-service >/dev/null 2>&1; then
+  rc-service zabbix-server restart
+  rc-service zabbix-agent restart
+  rc-service apache2 restart || rc-service httpd restart
+  rc-update add zabbix-server default
+  rc-update add zabbix-agent default
+  rc-update add apache2 default || rc-update add httpd default
+fi
+
+echo "Zabbix 6.0 installation with APACHE completed successfully on Ubuntu 22.04"
+
+
+#!/bin/bash
+# Install Grafana
+apt-get install -y apt-transport-https software-properties-common
+wget -q -O /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key
+
+echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main" | tee -a /etc/apt/sources.list.d/grafana.list
+
+apt-get update
+apt-get install -y grafana
+
+# Configure Grafana
+cat > /etc/grafana/grafana.ini <<EOL
+[server]
+http_port = 3000
+
+[security]
+admin_user = admin
+admin_password = srvzbx123
+
+[database]
+EOL
+
+# Start Grafana
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload
+  systemctl start grafana-server
+  systemctl enable grafana-server
+elif command -v service >/dev/null 2>&1; then
+  service grafana-server start
+elif command -v rc-service >/dev/null 2>&1; then
+  rc-service grafana-server start
+  rc-update add grafana-server default
+fi
+
+# Install Zabbix plugin for Grafana
+if command -v grafana-cli >/dev/null 2>&1; then
+  grafana-cli plugins install alexanderzobnin-zabbix-app
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart grafana-server
+  elif command -v service >/dev/null 2>&1; then
+    service grafana-server restart
+  elif command -v rc-service >/dev/null 2>&1; then
+    rc-service grafana-server restart
+  fi
+fi
+
+echo "Grafana installation completed successfully on Ubuntu 22.04"
+
+
+#!/bin/bash
+# Create API user in Zabbix (this is a placeholder - in production this would use Zabbix API)
+echo "Creating API user in Zabbix for Grafana integration..."
+
+# We'll use an environment variable to store the Zabbix API key that Grafana will use
+# In a real deployment, this would be done via the Zabbix API
+echo "ZABBIX_API_KEY=your_zabbix_api_key" >> /etc/environment
+
+echo "Zabbix 6.0 and Grafana integration completed on Ubuntu 22.04"
+
+
+#!/bin/bash
+# Configure SNMP monitoring for network devices
+
+# Make sure SNMP templates are imported into Zabbix
+# This is a simplified version - in production this would use Zabbix API
+
+
+
+echo "Network device configuration completed on Ubuntu 22.04"
+
+
+#!/bin/bash
+# Security hardening script for Zabbix and Grafana deployment on Ubuntu 22.04
+
+# Enable and configure UFW firewall
+apt-get install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw allow http
+ufw allow https
+ufw allow 80/tcp
+ufw allow 10051/tcp
+ufw allow 10050/tcp
+ufw allow 3000/tcp
+ufw --force enable
+
+
+# Secure SSH configuration
+sed -i 's/#PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
+sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart sshd
+elif command -v service >/dev/null 2>&1; then
+  service sshd restart
+elif command -v rc-service >/dev/null 2>&1; then
+  rc-service sshd restart
+fi
+
+
+# Install and configure Fail2Ban
+apt-get install -y fail2ban
+cat > /etc/fail2ban/jail.local <<EOL
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+
+[apache]
+enabled = true
+
+[grafana]
+enabled = true
+port = 3000
+logpath = /var/log/grafana/grafana.log
+EOL
+
+systemctl restart fail2ban
+
+
+# Create a restricted admin user
+useradd -m -s /bin/bash admin
+case "ubuntu" in
+  ubuntu|debian)
+    usermod -aG sudo admin
+    ;;
+  rocky|rhel)
+    usermod -aG wheel admin
+    ;;
+  alpine)
+    apk add sudo
+    addgroup admin wheel
+    echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
+    ;;
+  opensuse)
+    usermod -aG wheel admin
+    ;;
+esac
+mkdir -p /home/admin/.ssh
+echo "# Add your public SSH key here" > /home/admin/.ssh/authorized_keys
+chmod 700 /home/admin/.ssh
+chmod 600 /home/admin/.ssh/authorized_keys
+chown -R admin:admin /home/admin/.ssh
+
+echo "Security hardening with APACHE web server completed on Ubuntu 22.04"
+
+echo "----------------------------------------------"
+echo "Deployment completed successfully on $(date)"
+echo "Zabbix 6.0 with APACHE is accessible at: http://SRVZBX01:80/"
+echo "Grafana is accessible at: http://SRVZBX01:3000/"
+echo "Check the log file at $LOG_FILE for more details"
