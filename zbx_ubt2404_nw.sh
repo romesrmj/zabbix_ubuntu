@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full deployment script for Zabbix 6.0 and Grafana with APACHE on Ubuntu 22.04
+# Full deployment script for Zabbix 6.4 and Grafana with APACHE on Ubuntu 24.04
 
 # Exit on error
 set -e
@@ -9,7 +9,7 @@ LOG_FILE="/var/log/zabbix-grafana-deployment.log"
 exec > >(tee -i $LOG_FILE)
 exec 2>&1
 
-echo "Starting Zabbix 6.0 with APACHE and Grafana deployment on Ubuntu 22.04 at $(date)"
+echo "Starting Zabbix 6.4 with APACHE and Grafana deployment on Ubuntu 24.04 at $(date)"
 echo "----------------------------------------------"
 
 #!/bin/bash
@@ -42,13 +42,13 @@ fi
 # Install SNMP Python modules
 pip3 install pysnmp pysnmp-mibs
 
-echo "Base packages installed successfully on Ubuntu 22.04"
+echo "Base packages installed successfully on Ubuntu 24.04"
 
 
 #!/bin/bash
 # Install Zabbix repository
-wget https://repo.zabbix.com/zabbix/6.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.0-4+ubuntu22.04_all.deb
-dpkg -i zabbix-release_6.0-4+ubuntu22.04_all.deb
+wget https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-4+ubuntu24.04_all.deb
+dpkg -i zabbix-release_6.4-4+ubuntu24.04_all.deb
 apt-get update
 
 # Install Zabbix server, frontend, and agent
@@ -62,8 +62,8 @@ apt-get install -y apache2 libapache2-mod-php
   mysql_secure_installation <<EOF
 
 Y
-srvzbx123
-srvzbx123
+91297686
+91297686
 Y
 Y
 Y
@@ -71,12 +71,12 @@ Y
 EOF
 
   # Create database
-  mysql -uroot -psrvzbx123 -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
-  mysql -uroot -psrvzbx123 -e "create user 'zabbix'@'localhost' identified by 'srvzbx123';"
-  mysql -uroot -psrvzbx123 -e "grant all privileges on zabbix.* to 'zabbix'@'localhost';"
+  mysql -uroot -p91297686 -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"
+  mysql -uroot -p91297686 -e "create user 'zabbix'@'localhost' identified by '91297686';"
+  mysql -uroot -p91297686 -e "grant all privileges on zabbix.* to 'zabbix'@'localhost';"
   
   # Import initial schema
-  zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -psrvzbx123 zabbix
+  zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql -uzabbix -p91297686 zabbix
   
 elif [ "mysql" == "postgresql" ]; then
   apt-get install -y zabbix-server-pgsql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent postgresql
@@ -85,7 +85,7 @@ elif [ "mysql" == "postgresql" ]; then
 apt-get install -y apache2 libapache2-mod-php
   
   # Create database
-  sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD 'srvzbx123';"
+  sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '91297686';"
   sudo -u postgres psql -c "CREATE DATABASE zabbix OWNER zabbix;"
   
   # Import initial schema
@@ -93,7 +93,7 @@ apt-get install -y apache2 libapache2-mod-php
 fi
 
 # Configure Zabbix server
-sed -i "s/# DBPassword=/DBPassword=srvzbx123/g" /etc/zabbix/zabbix_server.conf
+sed -i "s/# DBPassword=/DBPassword=91297686/g" /etc/zabbix/zabbix_server.conf
 sed -i "s/# DBName=zabbix/DBName=zabbix/g" /etc/zabbix/zabbix_server.conf
 sed -i "s/# DBUser=zabbix/DBUser=zabbix/g" /etc/zabbix/zabbix_server.conf
 
@@ -119,7 +119,7 @@ elif command -v rc-service >/dev/null 2>&1; then
   rc-update add apache2 default || rc-update add httpd default
 fi
 
-echo "Zabbix 6.0 installation with APACHE completed successfully on Ubuntu 22.04"
+echo "Zabbix 6.4 installation with APACHE completed successfully on Ubuntu 24.04"
 
 
 #!/bin/bash
@@ -139,7 +139,7 @@ http_port = 3000
 
 [security]
 admin_user = admin
-admin_password = srvzbx123
+admin_password = 91297686
 
 [database]
 EOL
@@ -168,7 +168,7 @@ if command -v grafana-cli >/dev/null 2>&1; then
   fi
 fi
 
-echo "Grafana installation completed successfully on Ubuntu 22.04"
+echo "Grafana installation completed successfully on Ubuntu 24.04"
 
 
 #!/bin/bash
@@ -179,7 +179,7 @@ echo "Creating API user in Zabbix for Grafana integration..."
 # In a real deployment, this would be done via the Zabbix API
 echo "ZABBIX_API_KEY=your_zabbix_api_key" >> /etc/environment
 
-echo "Zabbix 6.0 and Grafana integration completed on Ubuntu 22.04"
+echo "Zabbix 6.4 and Grafana integration completed on Ubuntu 24.04"
 
 
 #!/bin/bash
@@ -190,11 +190,11 @@ echo "Zabbix 6.0 and Grafana integration completed on Ubuntu 22.04"
 
 
 
-echo "Network device configuration completed on Ubuntu 22.04"
+echo "Network device configuration completed on Ubuntu 24.04"
 
 
 #!/bin/bash
-# Security hardening script for Zabbix and Grafana deployment on Ubuntu 22.04
+# Security hardening script for Zabbix and Grafana deployment on Ubuntu 24.04
 
 # Enable and configure UFW firewall
 apt-get install -y ufw
@@ -269,10 +269,10 @@ chmod 700 /home/admin/.ssh
 chmod 600 /home/admin/.ssh/authorized_keys
 chown -R admin:admin /home/admin/.ssh
 
-echo "Security hardening with APACHE web server completed on Ubuntu 22.04"
+echo "Security hardening with APACHE web server completed on Ubuntu 24.04"
 
 echo "----------------------------------------------"
 echo "Deployment completed successfully on $(date)"
-echo "Zabbix 6.0 with APACHE is accessible at: http://SRVZBX01:80/"
-echo "Grafana is accessible at: http://SRVZBX01:3000/"
+echo "Zabbix 6.4 with APACHE is accessible at: http://srvzbx01:80/"
+echo "Grafana is accessible at: http://srvzbx01:3000/"
 echo "Check the log file at $LOG_FILE for more details"
