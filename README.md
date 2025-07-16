@@ -11,6 +11,10 @@ bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/z
 
 bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx_ubt-2404.sh)
 
+Zabbix 7, Apache, Grafana -- ubuntu server 24.04
+
+bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/zbx7.sh)
+
 # Deploy Netbox
 bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/netbox.sh)
 
