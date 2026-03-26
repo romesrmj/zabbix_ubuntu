@@ -2,24 +2,24 @@
 
 # ==============================
 #  INSTALAÇÃO ZABBIX 7.0 + APACHE + GRAFANA
-#  PARA UBUNTU 24.04 LTS
-#  (Versão com correção de pacotes quebrados)
+#  PARA UBUNTU 22.04 LTS
+#  (Versão otimizada e corrigida)
 # ==============================
 
 if [ "$EUID" -ne 0 ]; then
-    echo "⚠️  Execute como root: sudo ./install_zabbix_apache_ubuntu_24_04.sh"
+    echo "⚠️  Execute como root: sudo $0"
     exit 1
 fi
 
 # ==============================
-# Limpar pacotes quebrados e atualizar
+# Atualizar sistema e corrigir pacotes quebrados
 # ==============================
 echo "🛠 Corrigindo pacotes quebrados e atualizando sistema..."
+apt update && apt upgrade -y
 apt --fix-broken install -y
 dpkg --configure -a
 apt autoremove -y
 apt autoclean -y
-apt update && apt upgrade -y
 
 # ==============================
 # Instala dependências básicas
@@ -31,23 +31,34 @@ apt install -y snmp snmp-mibs-downloader nano curl wget gnupg2 software-properti
 sed -i 's/^mibs :/# mibs :/' /etc/snmp/snmp.conf
 
 # ==============================
-# INTERATIVIDADE: DB
+# Configuração do banco de dados
 # ==============================
 echo ""
 echo "=============================="
 echo "  CONFIGURAÇÃO DO BANCO DE DADOS"
 echo "=============================="
 
-read -p "🧑‍💼 Informe o nome do usuário do banco (ex: zabbix): " DB_USER
-read -s -p "🔑 Informe a senha do banco: " DB_PASS
-echo ""
-read -s -p "🔁 Confirme a senha do banco: " DB_PASS_CONFIRM
-echo ""
+# Valida usuário do banco
+while true; do
+    read -p "🧑‍💼 Informe o nome do usuário do banco (ex: zabbix): " DB_USER
+    if [[ -n "$DB_USER" && ! "$DB_USER" =~ [[:space:]] ]]; then
+        break
+    else
+        echo "❌ Nome de usuário inválido. Sem espaços e não vazio."
+    fi
+done
 
-if [ "$DB_PASS" != "$DB_PASS_CONFIRM" ]; then
-    echo "❌ As senhas não coincidem. Abortando."
-    exit 1
-fi
+while true; do
+    read -s -p "🔑 Informe a senha do banco: " DB_PASS
+    echo ""
+    read -s -p "🔁 Confirme a senha do banco: " DB_PASS_CONFIRM
+    echo ""
+    if [ "$DB_PASS" == "$DB_PASS_CONFIRM" ]; then
+        break
+    else
+        echo "❌ As senhas não coincidem. Tente novamente."
+    fi
+done
 
 echo ""
 echo "📋 Usuário do banco: $DB_USER"
@@ -62,25 +73,26 @@ fi
 # Repositório Zabbix
 # ==============================
 echo "📥 Instalando repositório Zabbix..."
-wget -q https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb
-dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb || apt --fix-broken install -y
+wget -q https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu22.04_all.deb
+dpkg -i zabbix-release_latest_7.0+ubuntu22.04_all.deb || apt --fix-broken install -y
+rm -f zabbix-release_latest_7.0+ubuntu22.04_all.deb
 apt update
 
 # ==============================
-# Instala Zabbix + Apache
+# Instala Zabbix Server + Frontend + Apache + Agent2
 # ==============================
-echo "📦 Instalando Zabbix Server + Frontend + Apache..."
-apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent apache2 || apt --fix-broken install -y
+echo "📦 Instalando Zabbix Server + Frontend + Apache + Agent2..."
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent2 apache2 || apt --fix-broken install -y
 
 # ==============================
-# MariaDB
+# Instalação MariaDB
 # ==============================
 echo "💾 Instalando MariaDB..."
 apt install -y mariadb-server || apt --fix-broken install -y
 systemctl enable mariadb
 systemctl start mariadb
 
-# Cria DB
+# Cria DB Zabbix
 echo "⚙️ Criando banco de dados Zabbix..."
 mysql -uroot <<EOF
 CREATE DATABASE IF NOT EXISTS zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
@@ -100,37 +112,50 @@ EOF
 
 # Configura senha no zabbix_server.conf
 echo "✍️ Configurando /etc/zabbix/zabbix_server.conf..."
-sed -i "s|^# DBPassword=|DBPassword=${DB_PASS}|" /etc/zabbix/zabbix_server.conf
+if grep -q "^DBPassword=" /etc/zabbix/zabbix_server.conf; then
+    sed -i "s|^DBPassword=.*|DBPassword=${DB_PASS}|" /etc/zabbix/zabbix_server.conf
+else
+    echo "DBPassword=${DB_PASS}" >> /etc/zabbix/zabbix_server.conf
+fi
 
 # ==============================
 # Inicia e habilita serviços
 # ==============================
 echo "🚀 Iniciando e habilitando serviços..."
-systemctl restart zabbix-server zabbix-agent apache2
-systemctl enable zabbix-server zabbix-agent apache2
+systemctl restart zabbix-server zabbix-agent2 apache2
+systemctl enable zabbix-server zabbix-agent2 apache2
 
 # ==============================
 # Grafana + Plugin Zabbix
 # ==============================
 echo "📊 Instalando Grafana..."
-wget -q -O - https://packages.grafana.com/gpg.key | gpg --dearmor -o /usr/share/keyrings/grafana.gpg
+mkdir -p /usr/share/keyrings
+wget -q -O - https://packages.grafana.com/gpg.key | gpg --dearmor > /usr/share/keyrings/grafana.gpg
 echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main" > /etc/apt/sources.list.d/grafana.list
 apt update
 apt install -y grafana || apt --fix-broken install -y
 systemctl enable grafana-server
 systemctl start grafana-server
 
+# Instala plugin Zabbix no Grafana
 echo "🔌 Instalando plugin do Zabbix no Grafana..."
+sleep 5
 grafana-cli plugins install alexanderzobnin-zabbix-app
 systemctl restart grafana-server
 
 # ==============================
-# Final - mostrando IP real do servidor
+# Final - mostrando IP do servidor
 # ==============================
-
-# Captura o IP principal da interface ativa
-SERVER_IP=$(hostname -I | awk '{print $1}')
-
+SERVER_IP=$(ip route get 1 | awk '{print $7;exit}')
+# Banner ASCII ZABBIX
+echo -e "\e[36m"
+echo "███████╗ █████╗ ██████╗ ██████╗ ██╗██╗  ██╗"
+echo "╚══███╔╝██╔══██╗██╔══██╗██╔══██╗██║╚██╗██╔╝"
+echo "  ███╔╝ ███████║██████╔╝██████╔╝██║ ╚███╔╝ "
+echo " ███╔╝  ██╔══██║██╔══██╗██╔══██╗██║ ██╔██╗ "
+echo "███████╗██║  ██║██████╔╝██████╔╝██║██╔╝ ██╗"
+echo "╚══════╝╚═╝  ╚═╝╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═╝"
+echo -e "\e[0m"
 echo ""
 echo "✅ Instalação concluída com sucesso!"
 echo "🌐 Acesse a interface Zabbix: http://${SERVER_IP}/zabbix"
