@@ -65,10 +65,10 @@ rm -f zabbix-release_6.4-1+ubuntu22.04_all.deb
 apt update
 
 # ==============================
-# Instala Zabbix + Apache + Agent
+# Instala Zabbix Server, Frontend e Agent
 # ==============================
-echo "📦 Instalando Zabbix Server, Frontend, Apache e Agent..."
-apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent apache2
+echo "📦 Instalando Zabbix Server, Frontend e Agent..."
+apt install -y zabbix-server-mysql zabbix-frontend-php zabbix-agent apache2
 
 # ==============================
 # Instala MariaDB
@@ -90,7 +90,8 @@ EOF
 
 # Importa schema do Zabbix
 echo "📤 Importando schema do Zabbix..."
-zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 -u${DB_USER} -p${DB_PASS} zabbix
+zcat /usr/share/doc/zabbix-server-mysql*/create.sql.gz | mysql --default-character-set=utf8mb4 -u${DB_USER} -p${DB_PASS} zabbix || \
+zcat /usr/share/zabbix-server-mysql*/create.sql.gz | mysql --default-character-set=utf8mb4 -u${DB_USER} -p${DB_PASS} zabbix
 
 mysql -uroot <<EOF
 SET GLOBAL log_bin_trust_function_creators = 0;
