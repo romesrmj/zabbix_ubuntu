@@ -3,63 +3,27 @@
 # ==============================
 #  INSTALAÇÃO ZABBIX 7.0 + APACHE + GRAFANA
 #  PARA UBUNTU 22.04 LTS
-#  COM ROLLBACK EM CASO DE ERRO
 # ==============================
 
 set -euo pipefail
-trap 'rollback' ERR
 
-# ==============================
-# FUNÇÃO DE ROLLBACK
-# ==============================
-rollback() {
-    echo "❌ Ocorreu um erro! Iniciando rollback..."
-    
-    echo "🛑 Parando serviços Zabbix e Grafana..."
-    systemctl stop zabbix-server zabbix-agent2 apache2 grafana-server || true
-
-    echo "🗑 Removendo pacotes instalados..."
-    apt remove --purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent2 apache2 grafana mariadb-server || true
-    apt autoremove -y
-    apt autoclean -y
-
-    echo "🗑 Removendo banco de dados Zabbix se existir..."
-    mysql -uroot -e "DROP DATABASE IF EXISTS zabbix;" || true
-    mysql -uroot -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';" || true
-
-    echo "🗑 Removendo arquivos temporários e repositórios..."
-    rm -f /etc/apt/sources.list.d/grafana.list
-    rm -f /usr/share/keyrings/grafana.gpg
-    rm -f /etc/apt/sources.list.d/zabbix-release_*.list || true
-    echo "✅ Rollback concluído."
-    exit 1
-}
-
-# ==============================
-# Verifica se é root
-# ==============================
 if [ "$EUID" -ne 0 ]; then
     echo "⚠️ Execute como root: sudo $0"
     exit 1
 fi
 
 # ==============================
-# Atualizar sistema e corrigir pacotes
+# Atualização e dependências
 # ==============================
-echo "🛠 Atualizando sistema e corrigindo pacotes quebrados..."
+echo "🛠 Atualizando sistema e instalando dependências..."
 apt update && apt upgrade -y
 apt --fix-broken install -y
 dpkg --configure -a
 apt autoremove -y
 apt autoclean -y
 
-# ==============================
-# Instala dependências básicas
-# ==============================
-echo "📦 Instalando dependências..."
 apt install -y snmp snmp-mibs-downloader nano curl wget gnupg2 software-properties-common lsb-release ca-certificates apt-transport-https
 
-# Corrige SNMP
 sed -i 's/^mibs :/# mibs :/' /etc/snmp/snmp.conf
 
 # ==============================
@@ -76,7 +40,7 @@ while true; do
     if [[ -n "$DB_USER" && ! "$DB_USER" =~ [[:space:]] ]]; then
         break
     else
-        echo "❌ Nome de usuário inválido. Sem espaços e não vazio."
+        echo "❌ Nome de usuário inválido."
     fi
 done
 
@@ -94,8 +58,6 @@ while true; do
 done
 
 echo ""
-echo "📋 Usuário do banco: $DB_USER"
-echo "🔒 Senha: [oculta]"
 read -p "❓ Continuar com esses dados? (s/n): " CONFIRM
 if [[ "$CONFIRM" != "s" && "$CONFIRM" != "S" ]]; then
     echo "❌ Instalação cancelada."
@@ -144,17 +106,11 @@ SET GLOBAL log_bin_trust_function_creators = 0;
 EOF
 
 # Configura senha no Zabbix server
-echo "✍️ Configurando /etc/zabbix/zabbix_server.conf..."
-if grep -q "^DBPassword=" /etc/zabbix/zabbix_server.conf; then
-    sed -i "s|^DBPassword=.*|DBPassword=${DB_PASS}|" /etc/zabbix/zabbix_server.conf
-else
-    echo "DBPassword=${DB_PASS}" >> /etc/zabbix/zabbix_server.conf
-fi
+sed -i "s|^#*DBPassword=.*|DBPassword=${DB_PASS}|" /etc/zabbix/zabbix_server.conf || echo "DBPassword=${DB_PASS}" >> /etc/zabbix/zabbix_server.conf
 
 # ==============================
 # Inicia e habilita serviços Zabbix
 # ==============================
-echo "🚀 Iniciando e habilitando serviços..."
 systemctl restart zabbix-server zabbix-agent2 apache2
 systemctl enable zabbix-server zabbix-agent2 apache2
 
@@ -170,10 +126,7 @@ apt install -y grafana
 systemctl enable grafana-server
 systemctl start grafana-server
 
-# Aguarda para garantir que grafana.ini exista
 sleep 5
-
-# Instala plugin Zabbix
 echo "🔌 Instalando plugin Zabbix no Grafana..."
 grafana-cli plugins install alexanderzobnin-zabbix-app
 systemctl restart grafana-server
@@ -181,10 +134,17 @@ systemctl restart grafana-server
 # ==============================
 # Finalização
 # ==============================
+echo -e "\e[36m"
+echo "███████╗ █████╗ ██████╗ ██████╗ ██╗██╗  ██╗"
+echo "╚══███╔╝██╔══██╗██╔══██╗██╔══██╗██║╚██╗██╔╝"
+echo "  ███╔╝ ███████║██████╔╝██████╔╝██║ ╚███╔╝ "
+echo " ███╔╝  ██╔══██║██╔══██╗██╔══██╗██║ ██╔██╗ "
+echo "███████╗██║  ██║██████╔╝██████╔╝██║██╔╝ ██╗"
+echo "╚══════╝╚═╝  ╚═╝╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═╝"
+echo -e "\e[0m"
 SERVER_IP=$(ip route get 1 | awk '{print $7;exit}')
-
 echo ""
-echo "✅ Instalação concluída com sucesso!"
+echo "✅ Instalação concluída!"
 echo "🌐 Zabbix: http://${SERVER_IP}/zabbix"
 echo "📊 Grafana: http://${SERVER_IP}:3000 (login: admin / admin)"
 echo "⚠️ Ative o plugin Zabbix no Grafana após o login inicial."
