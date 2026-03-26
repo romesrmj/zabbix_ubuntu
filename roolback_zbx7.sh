@@ -1,71 +1,34 @@
 #!/bin/bash
 
 # ==============================
-#  ROLLBACK ZABBIX 7.0 + APACHE + GRAFANA
-#  PARA UBUNTU 24.04 LTS
+#  ROLLBACK ZABBIX + GRAFANA + MARIADB
+#  PARA UBUNTU 22.04
 # ==============================
 
+set -euo pipefail
+
 if [ "$EUID" -ne 0 ]; then
-    echo "⚠️ Execute como root: sudo ./rollback_zabbix_ubuntu_24_04.sh"
+    echo "⚠️ Execute como root: sudo $0"
     exit 1
 fi
 
-echo "🛠 Iniciando rollback do Zabbix + Grafana..."
+read -p "🧑‍💼 Informe o usuário do banco Zabbix a ser removido: " DB_USER
 
-# ==============================
-# Para serviços
-# ==============================
-echo "🚫 Parando serviços..."
-systemctl stop zabbix-server zabbix-agent apache2 grafana-server
+echo "🛑 Parando serviços..."
+systemctl stop zabbix-server zabbix-agent2 apache2 grafana-server || true
 
-# ==============================
-# Remove pacotes
-# ==============================
-echo "📦 Removendo pacotes Zabbix e Grafana..."
-apt remove --purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent grafana apache2
+echo "🗑 Removendo pacotes..."
+apt remove --purge -y zabbix-server-mysql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent2 apache2 grafana mariadb-server || true
 apt autoremove -y
 apt autoclean -y
 
-# ==============================
-# Remove repositórios adicionados
-# ==============================
-echo "🗑 Removendo repositórios Zabbix e Grafana..."
-rm -f /etc/apt/sources.list.d/zabbix.list
+echo "🗑 Removendo banco de dados Zabbix e usuário..."
+mysql -uroot -e "DROP DATABASE IF EXISTS zabbix;" || true
+mysql -uroot -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';" || true
+
+echo "🗑 Removendo repositórios e arquivos temporários..."
 rm -f /etc/apt/sources.list.d/grafana.list
 rm -f /usr/share/keyrings/grafana.gpg
-apt update
+rm -f /etc/apt/sources.list.d/zabbix-release_*.list || true
 
-# ==============================
-# Remove banco de dados e usuário do Zabbix
-# ==============================
-echo "💾 Removendo banco de dados e usuário do Zabbix..."
-read -p "🧑‍💼 Informe o nome do usuário do banco que foi criado (ex: zabbix): " DB_USER
-read -s -p "🔑 Informe a senha do usuário root do MariaDB/MySQL: " ROOT_PASS
-echo ""
-
-mysql -uroot -p${ROOT_PASS} <<EOF
-DROP DATABASE IF EXISTS zabbix;
-DROP USER IF EXISTS '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-EOF
-
-# ==============================
-# Remove arquivos de configuração do Zabbix
-# ==============================
-echo "🗑 Removendo arquivos de configuração do Zabbix..."
-rm -rf /etc/zabbix
-rm -rf /usr/share/zabbix
-
-# ==============================
-# Remove arquivos do Grafana
-# ==============================
-echo "🗑 Removendo arquivos de configuração do Grafana..."
-rm -rf /etc/grafana
-rm -rf /var/lib/grafana
-rm -rf /var/log/grafana
-
-# ==============================
-# Mensagem final
-# ==============================
-echo ""
-echo "✅ Rollback concluído! Todos os pacotes, bancos e arquivos do Zabbix e Grafana foram removidos."
+echo "✅ Rollback concluído. O sistema voltou ao estado anterior."
