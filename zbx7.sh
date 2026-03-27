@@ -406,66 +406,59 @@ YAML
 configure_grafana_via_api() {
     header "Verificando configuracao do Grafana via API"
 
-    # Aguarda API responder (ate 60 s)
-    info "Aguardando API do Grafana..."
+    # Aguarda Grafana subir completamente — /api/health nao requer autenticacao.
+    # Usa retries++ como "retries=$(( retries + 1 ))" para evitar falso exit
+    # causado pelo comportamento de ((N++)) retornar 1 quando N=0 com set -e ativo.
+    info "Aguardando API do Grafana (max 90s)..."
     local retries=0
-    until curl -sf -o /dev/null \
-            -u "${GRAFANA_ADMIN_USER}:${GRAFANA_ADMIN_PASS}" \
-            "${GRAFANA_API}/health" 2>/dev/null; do
-        if [[ $retries -ge 20 ]]; then
-            error "Grafana API nao respondeu em 60 segundos."
-            journalctl -u grafana-server -n 30 --no-pager >> "$LOG_FILE" 2>&1
+    until curl -sf -o /dev/null "${GRAFANA_API}/health" 2>/dev/null; do
+        if [[ $retries -ge 30 ]]; then
+            error "Grafana API nao respondeu em 90 segundos."
+            journalctl -u grafana-server -n 50 --no-pager | tee -a "$LOG_FILE"
             exit 1
         fi
+        retries=$(( retries + 1 ))
         sleep 3
-        ((retries++))
     done
-    info "API do Grafana respondendo."
+    info "API do Grafana respondendo (${retries} tentativas)."
 
     # ── 1. Verifica datasource provisionado ─────────────────────────────────
-    local ds_response
-    ds_response=$(grafana_api GET "/datasources/name/Zabbix") || {
-        error "Datasource 'Zabbix' nao encontrado via API. Verifique ${LOG_FILE}."
-        exit 1
-    }
+    local ds_response ds_id
+    ds_response=$(grafana_api GET "/datasources/name/Zabbix" 2>/dev/null) || ds_response=""
+    ds_id=$(echo "$ds_response" | jq -r '.id // empty' 2>/dev/null) || ds_id=""
 
-    local ds_id
-    ds_id=$(echo "$ds_response" | jq -r '.id // empty')
-    if [[ -z "$ds_id" ]]; then
-        error "Falha ao obter ID do datasource Zabbix."
-        exit 1
+    if [[ -n "$ds_id" ]]; then
+        info "Datasource Zabbix registrado com sucesso (ID: ${ds_id})."
+    else
+        warn "Datasource Zabbix nao encontrado via API."
+        warn "Verifique: Grafana -> Connections -> Data Sources."
+        return 0
     fi
-    info "Datasource Zabbix registrado com sucesso (ID: ${ds_id})."
 
     # ── 2. Health-check do datasource ───────────────────────────────────────
-    # O Zabbix Web precisa estar no ar para retornar OK.
-    # Aguardamos ate 60 s para o Apache + PHP inicializarem completamente.
+    # Nao fatal: o Zabbix Web pode ainda estar inicializando o PHP/Apache.
     info "Testando conectividade Grafana <-> Zabbix API..."
-    local hc_retries=0
-    local hc_ok=false
+    local hc_retries=0 hc_status hc_ok=false
     until [[ $hc_retries -ge 20 ]]; do
-        local hc_status
-        hc_status=$(grafana_api GET "/datasources/${ds_id}/health" \
-            | jq -r '.status // "ERROR"') || true
+        hc_status=$(grafana_api GET "/datasources/${ds_id}/health" 2>/dev/null             | jq -r '.status // "ERROR"' 2>/dev/null) || hc_status="ERROR"
         if [[ "$hc_status" == "OK" ]]; then
             hc_ok=true
             break
         fi
+        hc_retries=$(( hc_retries + 1 ))
         sleep 3
-        ((hc_retries++))
     done
 
     if [[ "$hc_ok" == true ]]; then
         info "Health-check OK - Grafana conectado ao Zabbix com sucesso."
     else
-        warn "Health-check nao retornou OK. O Zabbix pode ainda estar inicializando."
+        warn "Health-check ainda nao OK (Zabbix pode estar inicializando)."
         warn "Confirme em: Grafana -> Connections -> Data Sources -> Zabbix -> Save & Test."
     fi
 
     # ── 3. Verifica se plugin esta ativo ────────────────────────────────────
     local plugin_enabled
-    plugin_enabled=$(grafana_api GET "/plugins/${GRAFANA_PLUGIN}/settings" \
-        | jq -r '.enabled // false') || plugin_enabled="unknown"
+    plugin_enabled=$(grafana_api GET "/plugins/${GRAFANA_PLUGIN}/settings" 2>/dev/null         | jq -r '.enabled // false' 2>/dev/null) || plugin_enabled="unknown"
 
     if [[ "$plugin_enabled" == "true" ]]; then
         info "Plugin ${GRAFANA_PLUGIN}: ativo."
@@ -474,7 +467,6 @@ configure_grafana_via_api() {
         warn "Acesse: Grafana -> Administration -> Plugins -> Zabbix -> Enable."
     fi
 }
-
 # ==============================================================================
 # Firewall (UFW)
 # ==============================================================================
