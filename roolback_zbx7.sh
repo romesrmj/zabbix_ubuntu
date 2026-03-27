@@ -20,8 +20,7 @@ trap 'echo "[ERRO] Falha na linha ${LINENO}. Saindo." >&2; exit 1' ERR
 # Configuracao
 # ==============================================================================
 readonly LOG_FILE="/var/log/zabbix_grafana_rollback.log"
-readonly GRAFANA_PLUGINS="alexanderzobnin-zabbix-app"
-  
+readonly GRAFANA_PLUGIN="alexanderzobnin-zabbix-app"
 FORCE=false
 
 # ==============================================================================
