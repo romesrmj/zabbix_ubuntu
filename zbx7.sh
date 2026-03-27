@@ -334,11 +334,15 @@ install_grafana() {
 # Instalado ANTES do primeiro start para evitar restart extra.
 # ==============================================================================
 install_grafana_plugin() {
-    header "Instalando plugin Zabbix para Grafana"
-    grafana-cli plugins install "$GRAFANA_PLUGIN"
-    info "Plugin ${GRAFANA_PLUGIN} instalado."
-}
+    header "Instalando plugins do Grafana"
 
+    for plugin in "${GRAFANA_PLUGINS[@]}"; do
+        info "Instalando plugin: $plugin"
+        grafana-cli plugins install "$plugin"
+    done
+
+    info "Plugins instalados com sucesso."
+}
 # ==============================================================================
 # Grafana — provisionamento via arquivo YAML
 #
