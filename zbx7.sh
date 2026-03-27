@@ -172,6 +172,12 @@ collect_credentials() {
 update_system() {
     header "Atualizando sistema"
 
+    # Remove repositorios de instalacoes anteriores com chave invalida/desatualizada.
+    # Sem isso, apt-get update falha antes de chegarmos a instalar a chave correta.
+    rm -f /etc/apt/sources.list.d/grafana.list
+    rm -f /etc/apt/keyrings/grafana.gpg
+    rm -f /usr/share/keyrings/grafana.gpg   # caminho legado, por seguranca
+
     # Para servicos que possam existir de uma instalacao anterior antes do upgrade,
     # evitando o aviso "user sessions running outdated binaries" pos-atualizacao.
     for svc in zabbix-server zabbix-agent zabbix-agent2; do
