@@ -21,6 +21,9 @@ trap 'echo "[ERRO] Falha na linha ${LINENO}. Saindo." >&2; exit 1' ERR
 # Variáveis de versão — edite aqui para atualizar
 # ==============================================================================
 readonly ZABBIX_VERSION="7.0"
+# Revisao do pacote de release — confirme em:
+#   https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/
+readonly ZABBIX_RELEASE_REV="7.0-2"
 readonly UBUNTU_CODENAME="noble"
 readonly UBUNTU_RELEASE="ubuntu24.04"
 readonly GRAFANA_REPO="https://apt.grafana.com"
@@ -168,6 +171,13 @@ collect_credentials() {
 # ==============================================================================
 update_system() {
     header "Atualizando sistema"
+
+    # Para servicos que possam existir de uma instalacao anterior antes do upgrade,
+    # evitando o aviso "user sessions running outdated binaries" pos-atualizacao.
+    for svc in zabbix-server zabbix-agent zabbix-agent2; do
+        systemctl stop "$svc" 2>/dev/null || true
+    done
+
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
     apt-get --fix-broken install -y -qq
@@ -175,8 +185,16 @@ update_system() {
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         snmp snmp-mibs-downloader curl wget gnupg2 jq \
         software-properties-common lsb-release ca-certificates \
-        apt-transport-https ufw
+        apt-transport-https ufw needrestart
+
     sed -i 's/^mibs :/# mibs :/' /etc/snmp/snmp.conf 2>/dev/null || true
+
+    # Suprime o aviso interativo do needrestart durante instalacoes nao-supervisionadas
+    # Servicos serao reiniciados explicitamente pelo script na etapa start_services.
+    if [[ -f /etc/needrestart/needrestart.conf ]]; then
+        sed -i "s|^#*\$nrconf{restart}.*|\$nrconf{restart} = 'a';|"             /etc/needrestart/needrestart.conf
+    fi
+
     info "Sistema atualizado."
 }
 
@@ -231,8 +249,10 @@ SQL
 # ==============================================================================
 install_zabbix_repo() {
     header "Configurando repositorio Zabbix ${ZABBIX_VERSION}"
-    local pkg="zabbix-release_latest_${ZABBIX_VERSION}+${UBUNTU_RELEASE}_all.deb"
-    local url="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/release/${UBUNTU_CODENAME}/pool/main/z/zabbix-release/${pkg}"
+    # Nome real do pacote: zabbix-release_X.Y-REV+ubuntuVERSION_all.deb
+    # URL: repo.zabbix.com/zabbix/X.Y/ubuntu/pool/main/z/zabbix-release/<pkg>
+    local pkg="zabbix-release_${ZABBIX_RELEASE_REV}+${UBUNTU_RELEASE}_all.deb"
+    local url="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/ubuntu/pool/main/z/zabbix-release/${pkg}"
 
     wget -q -O "/tmp/${pkg}" "$url"
     dpkg -i "/tmp/${pkg}"
@@ -282,14 +302,22 @@ configure_zabbix_server() {
 # ==============================================================================
 install_grafana() {
     header "Instalando Grafana OSS"
-    install -m 0755 -d /usr/share/keyrings
-    wget -q -O /usr/share/keyrings/grafana.gpg "${GRAFANA_REPO}/gpg.key"
-    echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] ${GRAFANA_REPO} stable main" \
-        > /etc/apt/sources.list.d/grafana.list
+
+    # Diretorio padrao do apt para chaves de terceiros (Ubuntu 22.04+)
+    mkdir -p /etc/apt/keyrings
+
+    # Baixa a chave ASCII-armored, converte para binario OpenPGP via tee
+    # (tee e necessario pois gpg --dearmor nao escreve direto em diretorios root)
+    wget -q -O - "${GRAFANA_REPO}/gpg.key"         | gpg --dearmor         | tee /etc/apt/keyrings/grafana.gpg > /dev/null
+    chmod 644 /etc/apt/keyrings/grafana.gpg
+
+    # Repositorio OSS (stable) — signed-by aponta para o keyring correto
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] ${GRAFANA_REPO} stable main"         > /etc/apt/sources.list.d/grafana.list
+
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq grafana
     systemctl enable grafana-server
-    info "Grafana instalado."
+    info "Grafana OSS instalado."
 }
 
 # ==============================================================================
