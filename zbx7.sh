@@ -1,33 +1,24 @@
 #!/usr/bin/env bash
-# ==============================================================================
+# ============================================================================== 
 #  install_zabbix_grafana.sh
 #  Instalação automatizada: Zabbix 7.0 + Grafana OSS + MariaDB
-#  Ubuntu 24.04 LTS (Noble Numbat)
-#
-#  Inclui configuração automática do plugin e datasource Zabbix no Grafana.
-#
-#  Uso:
-#    sudo bash install_zabbix_grafana.sh              # interativo
-#    sudo bash install_zabbix_grafana.sh --non-interactive \
-#         --db-user zabbix --db-pass 'MinhaS3nh@!'   # pipeline / CI
-#
-#  GitHub: https://github.com/<seu-usuario>/<seu-repo>
-# ==============================================================================
+#  Ubuntu 24.04 LTS
+# ============================================================================== 
 
 set -Eeuo pipefail
 trap 'echo "[ERRO] Falha na linha ${LINENO}. Saindo." >&2; exit 1' ERR
 
-# ==============================================================================
-# Variáveis de versão — edite aqui para atualizar
-# ==============================================================================
+# ============================================================================== 
+# Variáveis de versão
+# ============================================================================== 
 readonly ZABBIX_VERSION="7.0"
-# Revisao do pacote de release — confirme em:
-#   https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/
 readonly ZABBIX_RELEASE_REV="7.0-2"
-readonly UBUNTU_CODENAME="noble"
 readonly UBUNTU_RELEASE="ubuntu24.04"
 readonly GRAFANA_REPO="https://apt.grafana.com"
-readonly GRAFANA_PLUGIN="alexanderzobnin-zabbix-app"
+readonly GRAFANA_PLUGINS=(
+  "alexanderzobnin-zabbix-app"
+  "marcusolsson-dynamictext-panel"
+)
 readonly GRAFANA_PORT="3000"
 readonly GRAFANA_ADMIN_USER="admin"
 readonly GRAFANA_ADMIN_PASS="admin"
@@ -37,9 +28,6 @@ readonly ZABBIX_WEB_USER="Admin"
 readonly ZABBIX_WEB_PASS="zabbix"
 readonly LOG_FILE="/var/log/zabbix_grafana_install.log"
 
-# ==============================================================================
-# Utilitários
-# ==============================================================================
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
@@ -49,7 +37,6 @@ warn()   { echo -e "${YELLOW}[AVISO]${RESET} $*" | tee -a "$LOG_FILE"; }
 error()  { echo -e "${RED}[ERRO]${RESET}  $*" | tee -a "$LOG_FILE" >&2; }
 header() { echo -e "\n${BOLD}${CYAN}==> $*${RESET}" | tee -a "$LOG_FILE"; }
 
-# Faz requisição curl com retry (3x) e retorna o body
 grafana_api() {
     local method="$1"
     local endpoint="$2"
@@ -70,14 +57,8 @@ grafana_api() {
     return 1
 }
 
-# ==============================================================================
-# Verificações de pré-requisito
-# ==============================================================================
 check_root() {
-    if [[ "$EUID" -ne 0 ]]; then
-        error "Execute como root: sudo $0 $*"
-        exit 1
-    fi
+    [[ "$EUID" -ne 0 ]] && { error "Execute como root: sudo $0 $*"; exit 1; }
 }
 
 check_os() {
@@ -85,8 +66,6 @@ check_os() {
         error "Nao foi possivel detectar o sistema operacional."
         exit 1
     fi
-    # Leitura direta via grep para evitar conflito com variaveis readonly do script
-    # (o /etc/os-release do Ubuntu 24.04 exporta UBUNTU_CODENAME=noble, que colidiria)
     local os_id os_version os_pretty
     os_id=$(grep -Po '(?<=^ID=)[^\n]+' /etc/os-release | tr -d '"')
     os_version=$(grep -Po '(?<=^VERSION_ID=)[^\n]+' /etc/os-release | tr -d '"')
@@ -110,9 +89,8 @@ check_already_installed() {
     fi
 }
 
-# ==============================================================================
-# Parsing de argumentos (suporte a modo não-interativo)
-# ==============================================================================
+# ------------------------------------------------------------------------------
+
 NON_INTERACTIVE=false
 DB_USER=""
 DB_PASS=""
@@ -121,69 +99,42 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --non-interactive) NON_INTERACTIVE=true ;;
-            --db-user)         DB_USER="$2"; shift ;;
-            --db-pass)         DB_PASS="$2"; shift ;;
-            --help|-h)
-                echo "Uso: sudo $0 [--non-interactive --db-user USER --db-pass PASS]"
-                exit 0 ;;
+            --db-user) DB_USER="$2"; shift ;;
+            --db-pass) DB_PASS="$2"; shift ;;
+            --help|-h) echo "Uso: sudo $0 [--non-interactive --db-user USER --db-pass PASS]"; exit 0 ;;
             *) error "Argumento desconhecido: $1"; exit 1 ;;
         esac
         shift
     done
 }
 
-# ==============================================================================
-# Coleta interativa de credenciais
-# ==============================================================================
 collect_credentials() {
     if [[ "$NON_INTERACTIVE" == true ]]; then
-        [[ -z "$DB_USER" ]] && { error "--db-user e obrigatorio no modo nao-interativo."; exit 1; }
-        [[ -z "$DB_PASS" ]] && { error "--db-pass e obrigatorio no modo nao-interativo."; exit 1; }
+        [[ -z "$DB_USER" ]] && { error "--db-user e obrigatorio."; exit 1; }
+        [[ -z "$DB_PASS" ]] && { error "--db-pass e obrigatorio."; exit 1; }
         return
     fi
-
     header "Configuracao do banco de dados"
-
     while true; do
         read -rp "  Nome do usuario do banco (ex: zabbix): " DB_USER
-        if [[ -n "$DB_USER" && ! "$DB_USER" =~ [[:space:]] ]]; then
-            break
-        fi
-        warn "Nome de usuario invalido. Sem espacos, nao pode ser vazio."
+        [[ -n "$DB_USER" && ! "$DB_USER" =~ [[:space:]] ]] && break
+        warn "Nome de usuario invalido."
     done
-
     while true; do
         read -rsp "  Senha do banco: " DB_PASS; echo
         read -rsp "  Confirme a senha: " DB_PASS2; echo
-        if [[ "$DB_PASS" == "$DB_PASS2" && -n "$DB_PASS" ]]; then
-            break
-        fi
+        [[ "$DB_PASS" == "$DB_PASS2" && -n "$DB_PASS" ]] && break
         warn "Senhas nao coincidem ou estao vazias."
     done
-
     echo
     read -rp "  Confirmar configuracoes e iniciar instalacao? (s/n): " CONFIRM
     [[ "$CONFIRM" =~ ^[sS]$ ]] || { info "Instalacao cancelada."; exit 0; }
 }
 
-# ==============================================================================
-# Sistema e dependencias
-# ==============================================================================
 update_system() {
     header "Atualizando sistema"
-
-    # Remove repositorios de instalacoes anteriores com chave invalida/desatualizada.
-    # Sem isso, apt-get update falha antes de chegarmos a instalar a chave correta.
-    rm -f /etc/apt/sources.list.d/grafana.list
-    rm -f /etc/apt/keyrings/grafana.gpg
-    rm -f /usr/share/keyrings/grafana.gpg   # caminho legado, por seguranca
-
-    # Para servicos que possam existir de uma instalacao anterior antes do upgrade,
-    # evitando o aviso "user sessions running outdated binaries" pos-atualizacao.
-    for svc in zabbix-server zabbix-agent zabbix-agent2; do
-        systemctl stop "$svc" 2>/dev/null || true
-    done
-
+    rm -f /etc/apt/sources.list.d/grafana.list /etc/apt/keyrings/grafana.gpg /usr/share/keyrings/grafana.gpg
+    for svc in zabbix-server zabbix-agent zabbix-agent2; do systemctl stop "$svc" 2>/dev/null || true; done
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
     apt-get --fix-broken install -y -qq
@@ -192,32 +143,23 @@ update_system() {
         snmp snmp-mibs-downloader curl wget gnupg2 jq \
         software-properties-common lsb-release ca-certificates \
         apt-transport-https ufw needrestart
-
     sed -i 's/^mibs :/# mibs :/' /etc/snmp/snmp.conf 2>/dev/null || true
-
-    # Suprime o aviso interativo do needrestart durante instalacoes nao-supervisionadas
-    # Servicos serao reiniciados explicitamente pelo script na etapa start_services.
     if [[ -f /etc/needrestart/needrestart.conf ]]; then
-        sed -i "s|^#*\$nrconf{restart}.*|\$nrconf{restart} = 'a';|"             /etc/needrestart/needrestart.conf
+        sed -i "s|^#*\$nrconf{restart}.*|\$nrconf{restart} = 'a';|" /etc/needrestart/needrestart.conf
     fi
-
     info "Sistema atualizado."
 }
 
-# ==============================================================================
-# MariaDB
-# ==============================================================================
 install_mariadb() {
     header "Instalando e configurando MariaDB"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mariadb-server
     systemctl enable --now mariadb
-
     mysql -uroot <<'SQL'
-        DELETE FROM mysql.user WHERE User='';
-        DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
-        DROP DATABASE IF EXISTS test;
-        DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
-        FLUSH PRIVILEGES;
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%';
+FLUSH PRIVILEGES;
 SQL
     info "MariaDB instalado e endurecido."
 }
@@ -225,14 +167,11 @@ SQL
 create_zabbix_db() {
     header "Criando banco de dados Zabbix"
     local db_exists
-    db_exists=$(mysql -uroot -sse \
-        "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='zabbix';")
-
+    db_exists=$(mysql -uroot -sse "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='zabbix';")
     if [[ "$db_exists" -eq 1 && "$REINSTALL" == false ]]; then
-        warn "Banco 'zabbix' ja existe. Pulando criacao e importacao do schema."
+        warn "Banco 'zabbix' ja existe. Pulando criacao."
         return
     fi
-
     mysql -uroot <<SQL
 DROP DATABASE IF EXISTS zabbix;
 CREATE DATABASE zabbix CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
@@ -241,25 +180,17 @@ GRANT ALL PRIVILEGES ON zabbix.* TO '${DB_USER}'@'localhost';
 SET GLOBAL log_bin_trust_function_creators = 1;
 FLUSH PRIVILEGES;
 SQL
-
-    info "Importando schema do Zabbix (pode levar 1-2 minutos)..."
+    info "Importando schema do Zabbix..."
     zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz \
         | mysql --default-character-set=utf8mb4 -u"${DB_USER}" -p"${DB_PASS}" zabbix
-
     mysql -uroot -e "SET GLOBAL log_bin_trust_function_creators = 0;"
     info "Banco de dados criado e schema importado."
 }
 
-# ==============================================================================
-# Repositorio e pacotes Zabbix
-# ==============================================================================
 install_zabbix_repo() {
     header "Configurando repositorio Zabbix ${ZABBIX_VERSION}"
-    # Nome real do pacote: zabbix-release_X.Y-REV+ubuntuVERSION_all.deb
-    # URL: repo.zabbix.com/zabbix/X.Y/ubuntu/pool/main/z/zabbix-release/<pkg>
     local pkg="zabbix-release_${ZABBIX_RELEASE_REV}+${UBUNTU_RELEASE}_all.deb"
     local url="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/ubuntu/pool/main/z/zabbix-release/${pkg}"
-
     wget -q -O "/tmp/${pkg}" "$url"
     dpkg -i "/tmp/${pkg}"
     rm -f "/tmp/${pkg}"
@@ -285,83 +216,45 @@ install_zabbix_packages() {
 configure_zabbix_server() {
     header "Configurando Zabbix Server"
     local conf="/etc/zabbix/zabbix_server.conf"
-
-    if grep -q "^#*DBPassword=" "$conf"; then
-        sed -i "s|^#*DBPassword=.*|DBPassword=${DB_PASS}|" "$conf"
-    else
-        echo "DBPassword=${DB_PASS}" >> "$conf"
-    fi
-
-    if grep -q "^#*DBUser=" "$conf"; then
-        sed -i "s|^#*DBUser=.*|DBUser=${DB_USER}|" "$conf"
-    else
-        echo "DBUser=${DB_USER}" >> "$conf"
-    fi
-
+    sed -i "s|^#*DBPassword=.*|DBPassword=${DB_PASS}|" "$conf" 2>/dev/null || echo "DBPassword=${DB_PASS}" >> "$conf"
+    sed -i "s|^#*DBUser=.*|DBUser=${DB_USER}|" "$conf" 2>/dev/null || echo "DBUser=${DB_USER}" >> "$conf"
     chown root:zabbix "$conf"
     chmod 640 "$conf"
-    info "Zabbix Server configurado e permissoes restringidas."
+    info "Zabbix Server configurado."
 }
 
-# ==============================================================================
-# Grafana — instalacao
-# ==============================================================================
 install_grafana() {
     header "Instalando Grafana OSS"
-
-    # Diretorio padrao do apt para chaves de terceiros (Ubuntu 22.04+)
     mkdir -p /etc/apt/keyrings
-
-    # Baixa a chave ASCII-armored, converte para binario OpenPGP via tee
-    # (tee e necessario pois gpg --dearmor nao escreve direto em diretorios root)
-    wget -q -O - "${GRAFANA_REPO}/gpg.key"         | gpg --dearmor         | tee /etc/apt/keyrings/grafana.gpg > /dev/null
+    wget -q -O - "${GRAFANA_REPO}/gpg.key" | gpg --dearmor | tee /etc/apt/keyrings/grafana.gpg > /dev/null
     chmod 644 /etc/apt/keyrings/grafana.gpg
-
-    # Repositorio OSS (stable) — signed-by aponta para o keyring correto
-    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] ${GRAFANA_REPO} stable main"         > /etc/apt/sources.list.d/grafana.list
-
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] ${GRAFANA_REPO} stable main" > /etc/apt/sources.list.d/grafana.list
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq grafana
     systemctl enable grafana-server
     info "Grafana OSS instalado."
 }
 
-# ==============================================================================
-# Grafana — plugin Zabbix via CLI
-# Instalado ANTES do primeiro start para evitar restart extra.
-# ==============================================================================
 install_grafana_plugin() {
-    header "Instalando plugin Zabbix para Grafana"
-    grafana-cli plugins install "$GRAFANA_PLUGIN"
-    info "Plugin ${GRAFANA_PLUGIN} instalado."
+    header "Instalando plugins do Grafana"
+    for plugin in "${GRAFANA_PLUGINS[@]}"; do
+        info "Instalando plugin: $plugin"
+        grafana-cli plugins install "$plugin"
+    done
+    info "Plugins instalados com sucesso."
 }
 
-# ==============================================================================
-# Grafana — provisionamento via arquivo YAML
-#
-# Estrategia em duas camadas:
-#   1. Arquivo YAML em /etc/grafana/provisioning/ — persiste entre reinicializacoes,
-#      nao depende da API e e o metodo recomendado para IaC/GitOps.
-#   2. Verificacao + health-check via API REST apos o start — confirma que tudo
-#      foi carregado corretamente e testa a conectividade com o Zabbix.
-# ==============================================================================
 provision_grafana_datasource() {
     header "Provisionando datasource Zabbix via arquivo YAML"
-
     local ds_dir="/etc/grafana/provisioning/datasources"
     local plugins_dir="/etc/grafana/provisioning/plugins"
-
     mkdir -p "$ds_dir" "$plugins_dir"
-
-    # ── Datasource ──────────────────────────────────────────────────────────
+    local main_plugin="${GRAFANA_PLUGINS[0]}"
     cat > "${ds_dir}/zabbix.yaml" <<YAML
-# Provisionado automaticamente por install_zabbix_grafana.sh
-# Remova este arquivo somente se quiser gerenciar o datasource manualmente.
 apiVersion: 1
-
 datasources:
   - name: Zabbix
-    type: ${GRAFANA_PLUGIN}
+    type: ${main_plugin}
     access: proxy
     url: ${ZABBIX_API_URL}
     isDefault: true
@@ -382,193 +275,73 @@ datasources:
       password: ${ZABBIX_WEB_PASS}
 YAML
 
-    # ── Ativacao do plugin via provisioning ─────────────────────────────────
-    # Garante que o plugin aparece como "Enabled" na aba Plugins da UI.
     cat > "${plugins_dir}/zabbix.yaml" <<YAML
-# Provisionado automaticamente por install_zabbix_grafana.sh
 apiVersion: 1
-
 apps:
-  - type: ${GRAFANA_PLUGIN}
+  - type: ${main_plugin}
     disabled: false
 YAML
 
-    # Restringe leitura — arquivos contem credenciais
     chown root:grafana "${ds_dir}/zabbix.yaml" "${plugins_dir}/zabbix.yaml"
     chmod 640 "${ds_dir}/zabbix.yaml" "${plugins_dir}/zabbix.yaml"
-
     info "Arquivos de provisionamento criados."
 }
 
-# ==============================================================================
-# Grafana — verificacao pos-start via API REST
-# ==============================================================================
-configure_grafana_via_api() {
-    header "Verificando configuracao do Grafana via API"
-
-    # Aguarda Grafana subir completamente — /api/health nao requer autenticacao.
-    # Usa retries++ como "retries=$(( retries + 1 ))" para evitar falso exit
-    # causado pelo comportamento de ((N++)) retornar 1 quando N=0 com set -e ativo.
-    info "Aguardando API do Grafana (max 90s)..."
-    local retries=0
-    until curl -sf -o /dev/null "${GRAFANA_API}/health" 2>/dev/null; do
-        if [[ $retries -ge 30 ]]; then
-            error "Grafana API nao respondeu em 90 segundos."
-            journalctl -u grafana-server -n 50 --no-pager | tee -a "$LOG_FILE"
-            exit 1
-        fi
-        retries=$(( retries + 1 ))
-        sleep 3
-    done
-    info "API do Grafana respondendo (${retries} tentativas)."
-
-    # ── 1. Verifica datasource provisionado ─────────────────────────────────
-    local ds_response ds_id
-    ds_response=$(grafana_api GET "/datasources/name/Zabbix" 2>/dev/null) || ds_response=""
-    ds_id=$(echo "$ds_response" | jq -r '.id // empty' 2>/dev/null) || ds_id=""
-
-    if [[ -n "$ds_id" ]]; then
-        info "Datasource Zabbix registrado com sucesso (ID: ${ds_id})."
-    else
-        warn "Datasource Zabbix nao encontrado via API."
-        warn "Verifique: Grafana -> Connections -> Data Sources."
-        return 0
-    fi
-
-    # ── 2. Health-check do datasource ───────────────────────────────────────
-    # Nao fatal: o Zabbix Web pode ainda estar inicializando o PHP/Apache.
-    info "Testando conectividade Grafana <-> Zabbix API..."
-    local hc_retries=0 hc_status hc_ok=false
-    until [[ $hc_retries -ge 20 ]]; do
-        hc_status=$(grafana_api GET "/datasources/${ds_id}/health" 2>/dev/null             | jq -r '.status // "ERROR"' 2>/dev/null) || hc_status="ERROR"
-        if [[ "$hc_status" == "OK" ]]; then
-            hc_ok=true
-            break
-        fi
-        hc_retries=$(( hc_retries + 1 ))
-        sleep 3
-    done
-
-    if [[ "$hc_ok" == true ]]; then
-        info "Health-check OK - Grafana conectado ao Zabbix com sucesso."
-    else
-        warn "Health-check ainda nao OK (Zabbix pode estar inicializando)."
-        warn "Confirme em: Grafana -> Connections -> Data Sources -> Zabbix -> Save & Test."
-    fi
-
-    # ── 3. Verifica se plugin esta ativo ────────────────────────────────────
-    local plugin_enabled
-    plugin_enabled=$(grafana_api GET "/plugins/${GRAFANA_PLUGIN}/settings" 2>/dev/null         | jq -r '.enabled // false' 2>/dev/null) || plugin_enabled="unknown"
-
-    if [[ "$plugin_enabled" == "true" ]]; then
-        info "Plugin ${GRAFANA_PLUGIN}: ativo."
-    else
-        warn "Plugin ${GRAFANA_PLUGIN} pode nao estar ativo na UI."
-        warn "Acesse: Grafana -> Administration -> Plugins -> Zabbix -> Enable."
-    fi
-}
-# ==============================================================================
-# Firewall (UFW)
-# ==============================================================================
 configure_firewall() {
     header "Configurando UFW"
     ufw allow OpenSSH
-    ufw allow 80/tcp    comment "Zabbix Web"
-    ufw allow 443/tcp   comment "Zabbix Web HTTPS"
-    ufw allow 3000/tcp  comment "Grafana"
+    ufw allow 80/tcp comment "Zabbix Web"
+    ufw allow 443/tcp comment "Zabbix Web HTTPS"
+    ufw allow 3000/tcp comment "Grafana"
     ufw allow 10050/tcp comment "Zabbix Agent"
     ufw allow 10051/tcp comment "Zabbix Server traps"
     ufw --force enable
     info "Firewall configurado."
 }
 
-# ==============================================================================
-# Inicializacao de servicos
-# ==============================================================================
 start_services() {
     header "Iniciando servicos"
     systemctl restart zabbix-server zabbix-agent2 apache2
-    systemctl enable  zabbix-server zabbix-agent2 apache2
-    # Restart do Grafana para carregar os arquivos de provisionamento
+    systemctl enable zabbix-server zabbix-agent2 apache2
     systemctl restart grafana-server
     info "Servicos iniciados."
 }
 
-# ==============================================================================
-# Verificacao pos-instalacao
-# ==============================================================================
 verify_services() {
     header "Verificacao dos servicos"
     local all_ok=true
     local services=("zabbix-server" "zabbix-agent2" "apache2" "mariadb" "grafana-server")
-
     for svc in "${services[@]}"; do
         if systemctl is-active --quiet "$svc"; then
             echo -e "  ${GREEN}[OK]${RESET}   $svc"
         else
-            echo -e "  ${RED}[FALHA]${RESET} $svc  (veja: journalctl -u $svc)"
+            echo -e "  ${RED}[FALHA]${RESET} $svc"
             all_ok=false
         fi
     done
-
-    if [[ "$all_ok" == false ]]; then
-        error "Um ou mais servicos nao iniciaram. Revise o log: $LOG_FILE"
-        exit 1
-    fi
+    [[ "$all_ok" == false ]] && { error "Um ou mais servicos nao iniciaram. Veja o log: $LOG_FILE"; exit 1; }
 }
 
-# ==============================================================================
-# Resumo final
-# ==============================================================================
-print_summary() {
-    local SERVER_IP
-    SERVER_IP=$(ip route get 1 2>/dev/null | awk '{print $7; exit}')
-
-    echo -e "\n${CYAN}"
-    cat <<'BANNER'
- ███████╗ █████╗ ██████╗ ██████╗ ██╗██╗  ██╗
- ╚══███╔╝██╔══██╗██╔══██╗██╔══██╗██║╚██╗██╔╝
-   ███╔╝ ███████║██████╔╝██████╔╝██║ ╚███╔╝
-  ███╔╝  ██╔══██║██╔══██╗██╔══██╗██║ ██╔██╗
- ███████╗██║  ██║██████╔╝██████╔╝██║██╔╝ ██╗
- ╚══════╝╚═╝  ╚═╝╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═╝
-BANNER
-    echo -e "${RESET}"
-    echo -e "${BOLD}Instalacao concluida com sucesso!${RESET}"
-    echo
-    echo -e "  ${BOLD}Zabbix Web :${RESET}  http://${SERVER_IP}/zabbix"
-    echo -e "               Login: Admin / zabbix"
-    echo
-    echo -e "  ${BOLD}Grafana    :${RESET}  http://${SERVER_IP}:3000"
-    echo -e "               Login: admin / admin  ${YELLOW}(troque no primeiro acesso)${RESET}"
-    echo -e "               Datasource Zabbix: ${GREEN}provisionado automaticamente${RESET}"
-    echo -e "               Plugin Zabbix    : ${GREEN}ativado automaticamente${RESET}"
-    echo
-    echo -e "  ${BOLD}Log        :${RESET}  $LOG_FILE"
-    echo
-    echo -e "${YELLOW}Proximos passos:${RESET}"
-    echo "  1. Acesse o Zabbix Web e conclua o wizard de configuracao inicial."
-    echo "  2. O datasource Zabbix no Grafana ja esta configurado."
-    echo "     Confirme em: Connections -> Data Sources -> Zabbix -> Save & Test."
-    echo "  3. Importe dashboards prontos em grafana.com/grafana/dashboards"
-    echo "     (IDs recomendados para Zabbix: 7362 ou 10672)."
-    echo "  4. Configure HTTPS com: sudo apt install certbot python3-certbot-apache"
-    echo
+configure_grafana_via_api() {
+    header "Verificando configuracao do Grafana via API"
+    info "Aguardando API do Grafana..."
+    local retries=0
+    until curl -sf -o /dev/null "${GRAFANA_API}/health" 2>/dev/null; do
+        ((retries++))
+        [[ $retries -ge 30 ]] && { error "Grafana API nao respondeu"; exit 1; }
+        sleep 3
+    done
+    info "API do Grafana respondendo."
 }
 
-# ==============================================================================
-# Ponto de entrada principal
-# ==============================================================================
 main() {
     mkdir -p "$(dirname "$LOG_FILE")"
-    log "=== Inicio da instalacao Zabbix ${ZABBIX_VERSION} + Grafana ==="
-
+    log "=== Inicio da instalacao Zabbix + Grafana ==="
     parse_args "$@"
     check_root
     check_os
     check_already_installed
     collect_credentials
-
     update_system
     install_mariadb
     install_zabbix_repo
@@ -576,14 +349,12 @@ main() {
     create_zabbix_db
     configure_zabbix_server
     install_grafana
-    install_grafana_plugin          # grafana-cli antes do primeiro start
-    provision_grafana_datasource    # YAML persiste entre reinicializacoes
+    install_grafana_plugin
+    provision_grafana_datasource
     configure_firewall
-    start_services                  # restart com provisionamento ja presente
+    start_services
     verify_services
-    configure_grafana_via_api       # verificacao + health-check via API REST
-    print_summary
-
+    configure_grafana_via_api
     log "=== Instalacao concluida com sucesso ==="
 }
 
