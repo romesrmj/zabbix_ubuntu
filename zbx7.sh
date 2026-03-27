@@ -21,6 +21,9 @@ trap 'echo "[ERRO] Falha na linha ${LINENO}. Saindo." >&2; exit 1' ERR
 # Variáveis de versão — edite aqui para atualizar
 # ==============================================================================
 readonly ZABBIX_VERSION="7.0"
+# Revisao do pacote de release — confirme em:
+#   https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/
+readonly ZABBIX_RELEASE_REV="7.0-2"
 readonly UBUNTU_CODENAME="noble"
 readonly UBUNTU_RELEASE="ubuntu24.04"
 readonly GRAFANA_REPO="https://apt.grafana.com"
@@ -231,8 +234,10 @@ SQL
 # ==============================================================================
 install_zabbix_repo() {
     header "Configurando repositorio Zabbix ${ZABBIX_VERSION}"
-    local pkg="zabbix-release_latest_${ZABBIX_VERSION}+${UBUNTU_RELEASE}_all.deb"
-    local url="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/release/${UBUNTU_CODENAME}/pool/main/z/zabbix-release/${pkg}"
+    # Nome real do pacote: zabbix-release_X.Y-REV+ubuntuVERSION_all.deb
+    # URL: repo.zabbix.com/zabbix/X.Y/ubuntu/pool/main/z/zabbix-release/<pkg>
+    local pkg="zabbix-release_${ZABBIX_RELEASE_REV}+${UBUNTU_RELEASE}_all.deb"
+    local url="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/ubuntu/pool/main/z/zabbix-release/${pkg}"
 
     wget -q -O "/tmp/${pkg}" "$url"
     dpkg -i "/tmp/${pkg}"
