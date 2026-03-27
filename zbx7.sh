@@ -79,23 +79,28 @@ check_root() {
 
 check_os() {
     if [[ ! -f /etc/os-release ]]; then
-        error "Não foi possível detectar o sistema operacional."
+        error "Nao foi possivel detectar o sistema operacional."
         exit 1
     fi
-    # shellcheck source=/dev/null
-    source /etc/os-release
-    if [[ "$ID" != "ubuntu" || "$VERSION_ID" != "24.04" ]]; then
-        warn "Este script foi testado no Ubuntu 24.04. Detectado: $PRETTY_NAME"
+    # Leitura direta via grep para evitar conflito com variaveis readonly do script
+    # (o /etc/os-release do Ubuntu 24.04 exporta UBUNTU_CODENAME=noble, que colidiria)
+    local os_id os_version os_pretty
+    os_id=$(grep -Po '(?<=^ID=)[^\n]+' /etc/os-release | tr -d '"')
+    os_version=$(grep -Po '(?<=^VERSION_ID=)[^\n]+' /etc/os-release | tr -d '"')
+    os_pretty=$(grep -Po '(?<=^PRETTY_NAME=)[^\n]+' /etc/os-release | tr -d '"')
+
+    if [[ "$os_id" != "ubuntu" || "$os_version" != "24.04" ]]; then
+        warn "Este script foi testado no Ubuntu 24.04. Detectado: ${os_pretty}"
         read -rp "Continuar mesmo assim? (s/n): " ans
-        [[ "$ans" =~ ^[sS]$ ]] || { info "Instalação cancelada."; exit 0; }
+        [[ "$ans" =~ ^[sS]$ ]] || { info "Instalacao cancelada."; exit 0; }
     fi
 }
 
 check_already_installed() {
     if systemctl is-active --quiet zabbix-server 2>/dev/null; then
-        warn "Zabbix Server já está em execução neste sistema."
+        warn "Zabbix Server ja esta em execucao neste sistema."
         read -rp "Reinstalar? Isso vai RECRIAR o banco de dados. (s/n): " ans
-        [[ "$ans" =~ ^[sS]$ ]] || { info "Instalação cancelada."; exit 0; }
+        [[ "$ans" =~ ^[sS]$ ]] || { info "Instalacao cancelada."; exit 0; }
         REINSTALL=true
     else
         REINSTALL=false
@@ -417,7 +422,7 @@ configure_grafana_via_api() {
     done
 
     if [[ "$hc_ok" == true ]]; then
-        info "Health-check OK — Grafana conectado ao Zabbix com sucesso."
+        info "Health-check OK - Grafana conectado ao Zabbix com sucesso."
     else
         warn "Health-check nao retornou OK. O Zabbix pode ainda estar inicializando."
         warn "Confirme em: Grafana -> Connections -> Data Sources -> Zabbix -> Save & Test."
