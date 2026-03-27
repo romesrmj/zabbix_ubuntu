@@ -27,7 +27,10 @@ readonly ZABBIX_RELEASE_REV="7.0-2"
 readonly UBUNTU_CODENAME="noble"
 readonly UBUNTU_RELEASE="ubuntu24.04"
 readonly GRAFANA_REPO="https://apt.grafana.com"
-readonly GRAFANA_PLUGIN="alexanderzobnin-zabbix-app", "marcusolsson-dynamictext-panel"
+readonly GRAFANA_PLUGINS=(
+  "alexanderzobnin-zabbix-app"
+  "marcusolsson-dynamictext-panel"
+)
 readonly GRAFANA_PORT="3000"
 readonly GRAFANA_ADMIN_USER="admin"
 readonly GRAFANA_ADMIN_PASS="admin"
