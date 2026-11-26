@@ -22,6 +22,9 @@ bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/r
 # Deploy Netbox
 bash <(wget -qO- https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/main/netbox.sh)
 
+# Deploy Docker + Zabbix Proxy Enterprise
+curl -fsSL https://raw.githubusercontent.com/romesrmj/zabbix_ubuntu/refs/heads/main/zabbix-proxy-enterprise.sh -o /tmp/zabbix-proxy-enterprise.sh && sudo bash /tmp/zabbix-proxy-enterprise.sh
+
 #Permissão no arquivo
 chmod +x zabbix_auto.sh
 
