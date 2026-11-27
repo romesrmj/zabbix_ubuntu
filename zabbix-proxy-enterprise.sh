@@ -3,7 +3,7 @@
 #
 # ============================================================
 # GDC ZABBIX PROXY ENTERPRISE INSTALLER
-# Ubuntu Server 24.04 LTS
+# Ubuntu Server 24.04 LTS / 26.04 LTS
 #
 # Docker Engine + Docker Compose
 # Zabbix Proxy SQLite3
@@ -17,7 +17,7 @@ set -Eeuo pipefail
 umask 077
 
 # ------------------------------------------------------------
-# CONFIGURACOES PADRAO
+# CONFIGURACOES
 # ------------------------------------------------------------
 
 INSTALL_DIR="/opt/gdc-zabbix-proxy"
@@ -25,63 +25,74 @@ PROJECT_NAME="gdc-zabbix-proxy"
 CONTAINER_NAME="gdc-zabbix-proxy"
 VOLUME_NAME="gdc-zabbix-proxy-data"
 
-DEFAULT_VERSION="7.4-ubuntu-latest"
-
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-log() {
-    echo -e "${GREEN}[OK]${NC} $*"
-}
+log()  { echo -e "${GREEN}[OK]${NC} $*"; }
+info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+warn() { echo -e "${YELLOW}[AVISO]${NC} $*"; }
+die()  { echo -e "${RED}[ERRO]${NC} $*" >&2; exit 1; }
 
-info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
-}
-
-warn() {
-    echo -e "${YELLOW}[AVISO]${NC} $*"
-}
-
-die() {
-    echo -e "${RED}[ERRO]${NC} $*" >&2
-    exit 1
-}
-
-trap 'echo -e "${RED}[ERRO] Falha na linha $LINENO. Consulte a mensagem anterior.${NC}" >&2' ERR
+trap 'echo -e "${RED}[ERRO] Falha na linha $LINENO.${NC}" >&2' ERR
 
 # ------------------------------------------------------------
-# VALIDACAO DE PRIVILEGIOS
+# PRIVILEGIOS
 # ------------------------------------------------------------
 
-if [[ $EUID -ne 0 ]]; then
+if [[ "$EUID" -ne 0 ]]; then
     command -v sudo >/dev/null 2>&1 || die "Sudo nao encontrado."
     exec sudo -E bash "$0" "$@"
 fi
 
 [[ -t 0 ]] || die "Execute em um terminal interativo."
 
+# ------------------------------------------------------------
+# VALIDACAO DO SISTEMA OPERACIONAL
+# ------------------------------------------------------------
+
 [[ -f /etc/os-release ]] || die "Sistema operacional nao identificado."
 
 source /etc/os-release
 
-[[ "$ID" == "ubuntu" ]] || die "Sistema operacional deve ser Ubuntu."
+[[ "$ID" == "ubuntu" ]] || die "Este instalador aceita somente Ubuntu."
 
-[[ "$VERSION_ID" == "24.04" ]] || die "Utilize Ubuntu Server 24.04 LTS."
+case "$VERSION_ID" in
+    24.04|26.04)
+        log "Ubuntu Server $VERSION_ID identificado."
+        ;;
+    *)
+        die "Versao nao suportada: $VERSION_ID. Utilize Ubuntu 24.04 ou 26.04 LTS."
+        ;;
+esac
+
+UBUNTU_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+
+[[ -n "$UBUNTU_CODENAME" ]] || die "Codinome do Ubuntu nao identificado."
+
+ARCH=$(dpkg --print-architecture)
+
+case "$ARCH" in
+    amd64|arm64|ppc64el)
+        log "Arquitetura identificada: $ARCH"
+        ;;
+    *)
+        die "Arquitetura nao suportada pelo instalador: $ARCH"
+        ;;
+esac
 
 # ------------------------------------------------------------
 # CABECALHO
 # ------------------------------------------------------------
 
-clear
-
 echo
 echo "============================================================"
 echo "          GDC - ZABBIX PROXY ENTERPRISE INSTALLER"
 echo "============================================================"
-echo "Sistema: Ubuntu Server 24.04"
+echo "Sistema: Ubuntu $VERSION_ID ($UBUNTU_CODENAME)"
+echo "Arquitetura: $ARCH"
 echo "Banco: SQLite3"
 echo "Comunicacao: Active Proxy"
 echo "Seguranca: TLS PSK"
@@ -97,14 +108,6 @@ if [[ -e "$INSTALL_DIR" ]]; then
     die "Diretorio $INSTALL_DIR ja existe. Instalacao interrompida para proteger dados."
 fi
 
-if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-    die "Container $CONTAINER_NAME ja existe."
-fi
-
-if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
-    die "Volume $VOLUME_NAME ja existe. Verifique os dados antes de continuar."
-fi
-
 # ------------------------------------------------------------
 # ENTRADA DE DADOS
 # ------------------------------------------------------------
@@ -112,8 +115,7 @@ fi
 echo "CONFIGURACAO DO PROXY"
 echo
 
-read -rp "Hostname do Proxy (cadastro no Zabbix): " PROXY_HOSTNAME
-
+read -rp "Hostname do Proxy [$(hostname -s)]: " PROXY_HOSTNAME
 PROXY_HOSTNAME=${PROXY_HOSTNAME:-$(hostname -s)}
 
 [[ "$PROXY_HOSTNAME" =~ ^[a-zA-Z0-9._-]{1,128}$ ]] ||
@@ -125,7 +127,7 @@ read -rp "IP ou DNS do Zabbix Server: " SERVER_HOST
 
 [[ -n "$SERVER_HOST" ]] || die "Informe o endereco do Zabbix Server."
 
-# Validar IP ou DNS
+# Validacao de IPv4, IPv6 ou DNS
 python3 - "$SERVER_HOST" <<'PY'
 import ipaddress
 import re
@@ -136,12 +138,18 @@ host = sys.argv[1]
 try:
     ipaddress.ip_address(host)
 except ValueError:
-    if len(host) > 253:
+    hostname = host.rstrip(".")
+
+    if len(hostname) > 253:
         sys.exit("Endereco muito longo.")
 
-    pattern = r'^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$'
+    pattern = (
+        r"^(?=.{1,253}$)"
+        r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)"
+        r"(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
+    )
 
-    if not re.match(pattern, host):
+    if not re.fullmatch(pattern, hostname):
         sys.exit("Endereco IP/DNS invalido.")
 PY
 
@@ -151,14 +159,21 @@ SERVER_PORT=${SERVER_PORT:-10051}
 [[ "$SERVER_PORT" =~ ^[0-9]{1,5}$ ]] ||
     die "Porta invalida."
 
-(( SERVER_PORT >= 1 && SERVER_PORT <= 65535 )) ||
+SERVER_PORT_NUM=$((10#$SERVER_PORT))
+
+(( SERVER_PORT_NUM >= 1 && SERVER_PORT_NUM <= 65535 )) ||
     die "Porta fora do intervalo permitido."
 
-echo
+SERVER_PORT="$SERVER_PORT_NUM"
 
+# ------------------------------------------------------------
+# VERSAO DO ZABBIX
+# ------------------------------------------------------------
+
+echo
 echo "VERSAO DO ZABBIX"
-echo "1 - Zabbix 7.4 (compatibilidade com servidor 7.4)"
-echo "2 - Zabbix 8.0 LTS (utilizar com servidor 8.0)"
+echo "1 - Zabbix 7.4"
+echo "2 - Zabbix 8.0 LTS"
 echo
 
 read -rp "Selecione a versao [1]: " VERSION_OPTION
@@ -184,7 +199,7 @@ echo
 
 DEFAULT_IDENTITY="GDC-${PROXY_HOSTNAME}"
 
-read -rp "Identidade TLS PSK [${DEFAULT_IDENTITY}]: " TLS_IDENTITY
+read -rp "Identidade TLS PSK [$DEFAULT_IDENTITY]: " TLS_IDENTITY
 TLS_IDENTITY=${TLS_IDENTITY:-$DEFAULT_IDENTITY}
 
 [[ "$TLS_IDENTITY" =~ ^[a-zA-Z0-9._:-]{1,128}$ ]] ||
@@ -192,7 +207,7 @@ TLS_IDENTITY=${TLS_IDENTITY:-$DEFAULT_IDENTITY}
 
 echo
 echo "GERACAO DA CHAVE TLS PSK"
-echo "1 - Gerar chave segura automaticamente (recomendado)"
+echo "1 - Gerar chave segura automaticamente"
 echo "2 - Informar minha propria chave"
 echo
 
@@ -241,7 +256,7 @@ else
     HISTORY_INDEX_CACHE_SIZE="8M"
 fi
 
-# Endpoint IPv4/DNS ou IPv6
+# Endpoint com suporte a IPv4, DNS e IPv6
 if [[ "$SERVER_HOST" == *:* ]]; then
     SERVER_ENDPOINT="[${SERVER_HOST}]:${SERVER_PORT}"
 else
@@ -260,7 +275,7 @@ echo "Proxy:             $PROXY_HOSTNAME"
 echo "Servidor central:  $SERVER_ENDPOINT"
 echo "Versao:            $ZABBIX_VERSION"
 echo "Modo:              ACTIVE"
-echo "Banco:             SQLite3"
+echo "Banco:             SQLITE3"
 echo "Criptografia:      TLS PSK"
 echo "Identidade PSK:    $TLS_IDENTITY"
 echo "Memoria detectada: ${TOTAL_RAM_MB} MB"
@@ -273,31 +288,28 @@ echo
 
 read -rp "Deseja iniciar a instalacao? (S/N): " CONFIRM
 
-[[ "$CONFIRM" =~ ^[Ss]$ ]] || {
+if [[ ! "$CONFIRM" =~ ^[Ss]$ ]]; then
     unset TLS_PSK
     echo "Instalacao cancelada."
     exit 0
-}
+fi
 
 # ------------------------------------------------------------
-# INSTALACAO DE DEPENDENCIAS
+# DEPENDENCIAS
 # ------------------------------------------------------------
-
-log "Atualizando indice de pacotes..."
 
 export DEBIAN_FRONTEND=noninteractive
 
+log "Atualizando indice de pacotes..."
 apt-get update
 
 log "Instalando dependencias..."
-
 apt-get install -y \
     ca-certificates \
     curl \
     gnupg \
     openssl \
     python3 \
-    jq \
     dnsutils \
     netcat-openbsd
 
@@ -314,13 +326,10 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
 
 chmod a+r /etc/apt/keyrings/docker.asc
 
-ARCH=$(dpkg --print-architecture)
-CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-
 cat > /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
-Suites: ${CODENAME}
+Suites: ${UBUNTU_CODENAME}
 Components: stable
 Architectures: ${ARCH}
 Signed-By: /etc/apt/keyrings/docker.asc
@@ -349,6 +358,18 @@ docker compose version >/dev/null ||
 log "Docker instalado e operacional."
 
 # ------------------------------------------------------------
+# PROTECAO CONTRA RECURSOS EXISTENTES
+# ------------------------------------------------------------
+
+if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+    die "Container $CONTAINER_NAME ja existe."
+fi
+
+if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+    die "Volume $VOLUME_NAME ja existe. Verifique os dados antes de continuar."
+fi
+
+# ------------------------------------------------------------
 # DIRETORIOS
 # ------------------------------------------------------------
 
@@ -361,12 +382,12 @@ install -d -m 0700 "$INSTALL_DIR/secrets"
 # ARMAZENAMENTO DA PSK
 # ------------------------------------------------------------
 
-log "Armazenando chave TLS PSK protegida..."
+log "Armazenando chave TLS PSK..."
 
 printf '%s' "$TLS_PSK" > "$INSTALL_DIR/secrets/proxy.psk"
 
-# Docker Compose local monta o arquivo como secret.
-# A pasta no host permanece acessivel apenas ao root.
+# A pasta no host fica restrita ao root.
+# O arquivo fica legivel dentro do container.
 chmod 0444 "$INSTALL_DIR/secrets/proxy.psk"
 chmod 0700 "$INSTALL_DIR/secrets"
 
@@ -374,7 +395,6 @@ unset TLS_PSK
 
 # ------------------------------------------------------------
 # ARQUIVO ENV
-# SEM SENHAS OU CHAVES SECRETAS
 # ------------------------------------------------------------
 
 log "Criando configuracao de ambiente..."
@@ -395,67 +415,44 @@ chmod 0600 "$INSTALL_DIR/.env"
 # DOCKER COMPOSE
 # ------------------------------------------------------------
 
-log "Criando Docker Compose Enterprise..."
+log "Criando Docker Compose..."
 
 cat > "$INSTALL_DIR/docker-compose.yml" <<'EOF'
 services:
-
   zabbix-proxy:
-
     image: zabbix/zabbix-proxy-sqlite3:${ZABBIX_VERSION}
-
     container_name: gdc-zabbix-proxy
-
     hostname: ${PROXY_HOSTNAME}
-
     init: true
-
     restart: unless-stopped
 
     environment:
-
       ZBX_HOSTNAME: ${PROXY_HOSTNAME}
-
       ZBX_SERVER_HOST: ${SERVER_ENDPOINT}
-
       ZBX_PROXYMODE: "0"
 
       ZBX_TLSCONNECT: psk
-
       ZBX_TLSPSKIDENTITY: ${TLS_IDENTITY}
-
-      ZBX_TLSPSKFILE: /run/secrets/proxy_psk
+      ZBX_TLSPSKFILE: /run/zabbix/secrets/tls/proxy.psk
 
       ZBX_CACHESIZE: ${CACHE_SIZE}
-
       ZBX_HISTORYCACHESIZE: ${HISTORY_CACHE_SIZE}
-
       ZBX_HISTORYINDEXCACHESIZE: ${HISTORY_INDEX_CACHE_SIZE}
 
-      ZBX_CONFIGFREQUENCY: "300"
-
+      ZBX_PROXYCONFIGFREQUENCY: "300"
       ZBX_HEARTBEATFREQUENCY: "60"
 
       ZBX_STARTPOLLERS: "10"
-
       ZBX_STARTPINGERS: "2"
-
       ZBX_STARTSNMPPOLLERS: "5"
-
       ZBX_STARTDBSYNCERS: "4"
 
       ZBX_TIMEOUT: "10"
-
       ZBX_LOGSLOWQUERIES: "3000"
 
     volumes:
-
       - proxy-data:/var/lib/zabbix/db_data
-
-    secrets:
-
-      - source: proxy_psk
-        target: proxy_psk
+      - ./secrets/proxy.psk:/run/zabbix/secrets/tls/proxy.psk:ro
 
     cap_add:
       - NET_RAW
@@ -469,15 +466,8 @@ services:
         max-file: "5"
 
 volumes:
-
   proxy-data:
     name: gdc-zabbix-proxy-data
-
-secrets:
-
-  proxy_psk:
-    file: ./secrets/proxy.psk
-
 EOF
 
 chmod 0640 "$INSTALL_DIR/docker-compose.yml"
@@ -501,21 +491,20 @@ log "Verificando resolucao do servidor central..."
 
 if ! getent ahosts "$SERVER_HOST" >/dev/null 2>&1; then
     warn "Nao foi possivel resolver o endereco do servidor."
-    warn "Verifique DNS e conectividade antes de cadastrar o Proxy."
+    warn "Verifique DNS e conectividade."
 fi
 
-log "Verificando conectividade TCP com o servidor..."
+log "Verificando conectividade TCP..."
 
 if timeout 5 nc -z "$SERVER_HOST" "$SERVER_PORT" >/dev/null 2>&1; then
     log "Conexao TCP com o servidor central confirmada."
 else
-    warn "Conexao TCP nao confirmada neste momento."
-    warn "O firewall ou a rota podem estar bloqueando a comunicacao."
-    warn "A instalacao continuara, mas o Proxy precisa alcancar o servidor."
+    warn "Conexao TCP nao confirmada."
+    warn "Verifique firewall, rota e disponibilidade do servidor."
 fi
 
 # ------------------------------------------------------------
-# CRIACAO DO VOLUME PERSISTENTE
+# CRIACAO DO VOLUME
 # ------------------------------------------------------------
 
 log "Criando volume persistente SQLite3..."
@@ -542,19 +531,25 @@ docker compose -p "$PROJECT_NAME" up -d
 # VALIDACAO DO CONTAINER
 # ------------------------------------------------------------
 
-log "Aguardando inicializacao..."
+log "Aguardando inicializacao do Proxy..."
 
-sleep 20
+CONTAINER_READY=false
 
-if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-    docker compose -p "$PROJECT_NAME" logs --tail=100
-    die "Container nao encontrado."
-fi
+for attempt in $(seq 1 12); do
+    if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        CONTAINER_STATE=$(docker inspect \
+            -f '{{.State.Status}}' "$CONTAINER_NAME")
 
-CONTAINER_STATE=$(docker inspect \
-    -f '{{.State.Status}}' "$CONTAINER_NAME")
+        if [[ "$CONTAINER_STATE" == "running" ]]; then
+            CONTAINER_READY=true
+            break
+        fi
+    fi
 
-if [[ "$CONTAINER_STATE" != "running" ]]; then
+    sleep 5
+done
+
+if [[ "$CONTAINER_READY" != "true" ]]; then
     docker compose -p "$PROJECT_NAME" logs --tail=100
     die "Container nao iniciou corretamente."
 fi
@@ -562,17 +557,17 @@ fi
 log "Container em execucao."
 
 # ------------------------------------------------------------
-# VALIDACAO DA PSK DENTRO DO CONTAINER
+# VALIDACAO DA PSK
 # ------------------------------------------------------------
 
-if ! docker exec "$CONTAINER_NAME" \
-    test -r /run/secrets/proxy_psk; then
+if ! docker exec --user zabbix "$CONTAINER_NAME" \
+    test -r /run/zabbix/secrets/tls/proxy.psk; then
 
     docker compose -p "$PROJECT_NAME" logs --tail=100
-    die "O container nao conseguiu acessar a PSK."
+    die "O usuario Zabbix nao conseguiu acessar a PSK."
 fi
 
-log "Arquivo TLS PSK acessivel pelo container."
+log "Arquivo TLS PSK acessivel pelo usuario Zabbix."
 
 # ------------------------------------------------------------
 # INFORMACOES DA IMAGEM
@@ -615,24 +610,6 @@ echo "Identidade PSK: $TLS_IDENTITY"
 
 echo
 echo "============================================================"
-echo "          CREDENCIAIS PARA O ZABBIX SERVER"
-echo "============================================================"
-
-echo
-echo "Proxy name:"
-echo "$PROXY_HOSTNAME"
-
-echo
-echo "Encryption identity:"
-echo "$TLS_IDENTITY"
-
-echo
-echo "PSK:"
-cat "$INSTALL_DIR/secrets/proxy.psk"
-
-echo
-echo
-echo "============================================================"
 echo "COMANDOS ADMINISTRATIVOS"
 echo "============================================================"
 
@@ -664,16 +641,21 @@ echo "Validar configuracao:"
 echo "cd $INSTALL_DIR && docker compose config -q"
 
 echo
+echo "Consultar PSK (acesso restrito ao root):"
+echo "sudo cat $INSTALL_DIR/secrets/proxy.psk"
+
+echo
 echo "============================================================"
-echo "IMPORTANTE:"
+echo "IMPORTANTE"
 echo "============================================================"
 echo "1. Cadastre o Proxy no servidor Zabbix."
-echo "2. Configure o modo ACTIVE."
-echo "3. Configure a criptografia PSK."
-echo "4. Informe a identidade e a chave exibidas acima."
-echo "5. O servidor central deve permitir a comunicacao TCP 10051."
-echo "6. Nao apague o diretorio secrets nem o volume SQLite."
-echo "7. Backup automatico: DESABILITADO."
+echo "2. Utilize o mesmo nome informado no instalador."
+echo "3. Configure o Proxy como ACTIVE."
+echo "4. Configure criptografia PSK no cadastro do Proxy."
+echo "5. Informe a identidade e a PSK armazenadas no servidor."
+echo "6. O servidor central deve permitir TCP 10051."
+echo "7. Nao apague o diretorio secrets nem o volume SQLite."
+echo "8. Backup automatico: DESABILITADO."
 echo "============================================================"
 
 echo
